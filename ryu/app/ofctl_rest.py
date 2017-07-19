@@ -18,7 +18,7 @@ import json
 import ast
 
 import time
-import urlparse
+import urllib3
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event
@@ -234,24 +234,24 @@ def sdn_method(method):
             #before_switch_dict = ret
             before_switch_dict = ret[list(ret)[0]][0]
 
-            print "original start\n"
-            print ret
-            print "\noriginal end"
+            print("original start\n")
+            print(ret)
+            print("\noriginal end")
 
             time.sleep(delay_time)
             ret = method(self, req, dp, ofctl, port, **kwargs)
 
-            print "original start\n"
-            print ret
-            print "\noriginal end"
-            print "bandwidth start\n"
+            print("original start\n")
+            print(ret)
+            print("\noriginal end")
+            print("bandwidth start\n")
 
             switch_dict = ret[list(ret)[0]][0]
             bandwidth_dict = dict()
             bandwidth_dict["tx"] = (switch_dict['rx_bytes'] - before_switch_dict['rx_bytes']) / (delay_time * 128)
             bandwidth_dict["rx"] = (switch_dict['tx_bytes'] - before_switch_dict['tx_bytes']) / (delay_time * 128)
-            print bandwidth_dict
-            print "\nbandwidth end"
+            print(bandwidth_dict)
+            print("\nbandwidth end")
             return Response(content_type='application/json',
                             body=json.dumps(bandwidth_dict))
         except ValueError:

@@ -35,7 +35,7 @@ from ryu import cfg
 from ryu.lib import hub
 
 DEFAULT_WSGI_HOST = '0.0.0.0'
-DEFAULT_WSGI_PORT = 8080
+DEFAULT_WSGI_PORT = 9191
 
 CONF = cfg.CONF
 CONF.register_cli_opts([
