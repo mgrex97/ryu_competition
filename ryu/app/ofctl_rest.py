@@ -197,17 +197,17 @@ class PortNotFoundError(RyuException):
 
 def sdn_method(method):
     def wrapper(self, req, *args, **kwargs):
-	query_string = req.environ["QUERY_STRING"]
-	param_list = dict(urlparse.parse_qsl(query_string))
-	dpid = param_list["dpid"]
-	port = param_list["port"]
+        query_string = req.environ["QUERY_STRING"]
+        param_list = dict(urlparse.parse_qsl(query_string))
+        dpid = param_list["dpid"]
+        port = param_list["port"]
 
-	"""
-	print "query string: " + query_string
-	print "param list: " + str(param_list)
-	print "dpid: " + dpid
-	print "port: " + port
-	"""
+        """
+        print "query string: " + query_string
+        print "param list: " + str(param_list)
+        print "dpid: " + dpid
+        print "port: " + port
+        """
 
         # Get datapath instance from DPSet
         try:
@@ -598,7 +598,7 @@ class RestStatsApi(app_manager.RyuApp):
 
         wsgi.registory['StatsController'] = self.data
 
-	uri = '/linkbandwidth'
+        uri = '/linkbandwidth'
         mapper.connect('stats', uri,
                        controller=StatsController, action='get_linkbandwidth',
                        conditions=dict(method=['GET']))
