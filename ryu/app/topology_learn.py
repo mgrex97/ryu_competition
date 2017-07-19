@@ -127,6 +127,7 @@ class topology_learn(app_manager.RyuApp):
         links_list = get_link(self.topology_api_app,None)
         links = {}
         links['links'] = links['links'] = [({'src':{'dpid':hex(link.src.dpid),'port':link.src.port_no},'dest':{'dpid' : hex(link.dst.dpid),'port':link.dst.port_no}}) for link in links_list] 
+	return links
 
     @set_ev_cls(event.EventSwitchEnter)
     def get_topology_data(self,ev):
