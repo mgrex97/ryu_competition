@@ -17,6 +17,9 @@ import logging
 import json
 import ast
 
+import time
+import urlparse
+
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller import dpset
@@ -192,6 +195,75 @@ class PortNotFoundError(RyuException):
     message = 'No such port info: %(port_no)s'
 
 
+def sdn_method(method):
+    def wrapper(self, req, *args, **kwargs):
+	query_string = req.environ["QUERY_STRING"]
+	param_list = dict(urlparse.parse_qsl(query_string))
+	dpid = param_list["dpid"]
+	port = param_list["port"]
+
+	"""
+	print "query string: " + query_string
+	print "param list: " + str(param_list)
+	print "dpid: " + dpid
+	print "port: " + port
+	"""
+
+        # Get datapath instance from DPSet
+        try:
+            dp = self.dpset.get(int(str(dpid), 0))
+        except ValueError:
+            LOG.exception('Invalid dpid: %s', dpid)
+            return Response(status=400)
+        if dp is None:
+            LOG.error('No such Datapath: %s', dpid)
+            return Response(status=404)
+
+        # Get lib/ofctl_* module
+        try:
+            ofctl = supported_ofctl.get(dp.ofproto.OFP_VERSION)
+        except KeyError:
+            LOG.exception('Unsupported OF version: %s',
+                          dp.ofproto.OFP_VERSION)
+            return Response(status=501)
+
+        # Invoke StatsController method
+        try:
+            delay_time = 2
+            ret = method(self, req, dp, ofctl, port, **kwargs)
+            #before_switch_dict = ret
+            before_switch_dict = ret[list(ret)[0]][0]
+
+            print "original start\n"
+            print ret
+            print "\noriginal end"
+
+            time.sleep(delay_time)
+            ret = method(self, req, dp, ofctl, port, **kwargs)
+
+            print "original start\n"
+            print ret
+            print "\noriginal end"
+            print "bandwidth start\n"
+
+            switch_dict = ret[list(ret)[0]][0]
+            bandwidth_dict = dict()
+            bandwidth_dict["tx"] = (switch_dict['rx_bytes'] - before_switch_dict['rx_bytes']) / (delay_time * 128)
+            bandwidth_dict["rx"] = (switch_dict['tx_bytes'] - before_switch_dict['tx_bytes']) / (delay_time * 128)
+            print bandwidth_dict
+            print "\nbandwidth end"
+            return Response(content_type='application/json',
+                            body=json.dumps(bandwidth_dict))
+        except ValueError:
+            LOG.exception('Invalid syntax: %s', req.body)
+            return Response(status=400)
+        except AttributeError:
+            LOG.exception('Unsupported OF request in this version: %s',
+                          dp.ofproto.OFP_VERSION)
+            return Response(status=501)
+
+    return wrapper
+
 def stats_method(method):
     def wrapper(self, req, dpid, *args, **kwargs):
         # Get datapath instance from DPSet
@@ -302,6 +374,10 @@ class StatsController(ControllerBase):
         dps = list(self.dpset.dps.keys())
         body = json.dumps(dps)
         return Response(content_type='application/json', body=body)
+
+    @sdn_method
+    def get_linkbandwidth(self, req, dp, ofctl, port=None, **kwargs):
+        return ofctl.get_port_stats(dp, self.waiters, port)
 
     @stats_method
     def get_desc_stats(self, req, dp, ofctl, **kwargs):
@@ -521,6 +597,12 @@ class RestStatsApi(app_manager.RyuApp):
         mapper = wsgi.mapper
 
         wsgi.registory['StatsController'] = self.data
+
+	uri = '/linkbandwidth'
+        mapper.connect('stats', uri,
+                       controller=StatsController, action='get_linkbandwidth',
+                       conditions=dict(method=['GET']))
+
         path = '/stats'
         uri = path + '/switches'
         mapper.connect('stats', uri,
