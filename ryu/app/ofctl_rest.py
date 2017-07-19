@@ -19,6 +19,7 @@ import ast
 
 import time
 import urllib3
+from pprint import pprint
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event
@@ -39,6 +40,9 @@ from ryu.lib import ofctl_v1_5
 from ryu.app.wsgi import ControllerBase
 from ryu.app.wsgi import Response
 from ryu.app.wsgi import WSGIApplication
+
+from ryu.lib import dpid as dpid_lib
+from ryu.topology.api import get_switch, get_link, get_host
 
 LOG = logging.getLogger('ryu.app.ofctl_rest')
 
@@ -234,6 +238,7 @@ def sdn_method(method):
             #before_switch_dict = ret
             before_switch_dict = ret[list(ret)[0]][0]
 
+            """
             print("original start\n")
             print(ret)
             print("\noriginal end")
@@ -252,6 +257,8 @@ def sdn_method(method):
             bandwidth_dict["rx"] = (switch_dict['tx_bytes'] - before_switch_dict['tx_bytes']) / (delay_time * 128)
             print(bandwidth_dict)
             print("\nbandwidth end")
+            """
+
             return Response(content_type='application/json',
                             body=json.dumps(bandwidth_dict))
         except ValueError:
@@ -369,10 +376,23 @@ class StatsController(ControllerBase):
         super(StatsController, self).__init__(req, link, data, **config)
         self.dpset = data['dpset']
         self.waiters = data['waiters']
+        self.topology_api_app = data['topology_api_app']
+    
+    def to_dict(self, link):
+        return {'src' : {'dpid' : hex(link.src.dpid),'port':link.src.port_no},
+                'dest': {'dpid' : hex(link.dst.dpid),'port':link.dst.port_no}}
 
     def get_dpids(self, req, **_kwargs):
         dps = list(self.dpset.dps.keys())
         body = json.dumps(dps)
+        return Response(content_type='application/json', body=body)
+
+    def get_topo(self, req, **kwargs):
+        links_list = get_link(self.topology_api_app, None)
+        #links = [({'src':{'dpid':hex(link.src.dpid),'port':link.src.port_no},'dest':{'dpid' : hex(link.dst.dpid),'port':link.dst.port_no}}) for link in links_list]
+        body = json.dumps([self.to_dict(link) for link in links_list])
+        #body = json.dumps([link for link in links])
+        #print(body)
         return Response(content_type='application/json', body=body)
 
     @sdn_method
@@ -594,9 +614,15 @@ class RestStatsApi(app_manager.RyuApp):
         self.data = {}
         self.data['dpset'] = self.dpset
         self.data['waiters'] = self.waiters
+        self.data['topology_api_app'] = self
         mapper = wsgi.mapper
 
         wsgi.registory['StatsController'] = self.data
+        
+        uri = '/topo'
+        mapper.connect('stats', uri,
+                       controller=StatsController, action='get_topo',
+                       conditions=dict(method=['GET']))
 
         uri = '/linkbandwidth'
         mapper.connect('stats', uri,
