@@ -228,7 +228,7 @@ def sdn_method(method):
             ret = method(self, req, dp, ofctl, port, **kwargs)
             switch_dict_t0 = ret[list(ret)[0]][0]
 
-            delay_time = 2
+            delay_time = 3
             time.sleep(delay_time)
 
             ret = method(self, req, dp, ofctl, port, **kwargs)
