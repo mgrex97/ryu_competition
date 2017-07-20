@@ -18,7 +18,7 @@ import json
 import ast
 
 import time
-import urllib3
+import urllib
 from pprint import pprint
 
 from ryu.base import app_manager
@@ -202,20 +202,13 @@ class PortNotFoundError(RyuException):
 def sdn_method(method):
     def wrapper(self, req, *args, **kwargs):
         query_string = req.environ["QUERY_STRING"]
-        param_list = dict(urlparse.parse_qsl(query_string))
+        param_list = dict(urllib.parse.parse_qsl(query_string))
         dpid = param_list["dpid"]
         port = param_list["port"]
 
-        """
-        print "query string: " + query_string
-        print "param list: " + str(param_list)
-        print "dpid: " + dpid
-        print "port: " + port
-        """
-
         # Get datapath instance from DPSet
         try:
-            dp = self.dpset.get(int(str(dpid), 0))
+            dp = self.dpset.get(int(str(dpid), 16))
         except ValueError:
             LOG.exception('Invalid dpid: %s', dpid)
             return Response(status=400)
@@ -233,31 +226,19 @@ def sdn_method(method):
 
         # Invoke StatsController method
         try:
+            ret = method(self, req, dp, ofctl, port, **kwargs)
+            switch_dict_t0 = ret[list(ret)[0]][0]
+
             delay_time = 2
-            ret = method(self, req, dp, ofctl, port, **kwargs)
-            #before_switch_dict = ret
-            before_switch_dict = ret[list(ret)[0]][0]
-
-            """
-            print("original start\n")
-            print(ret)
-            print("\noriginal end")
-
             time.sleep(delay_time)
+
             ret = method(self, req, dp, ofctl, port, **kwargs)
+            switch_dict_t1 = ret[list(ret)[0]][0]
 
-            print("original start\n")
-            print(ret)
-            print("\noriginal end")
-            print("bandwidth start\n")
-
-            switch_dict = ret[list(ret)[0]][0]
             bandwidth_dict = dict()
-            bandwidth_dict["tx"] = (switch_dict['rx_bytes'] - before_switch_dict['rx_bytes']) / (delay_time * 128)
-            bandwidth_dict["rx"] = (switch_dict['tx_bytes'] - before_switch_dict['tx_bytes']) / (delay_time * 128)
-            print(bandwidth_dict)
-            print("\nbandwidth end")
-            """
+            #switch_dict['rx_bytes'] convert to kbit (byte * 8 / 1024)
+            bandwidth_dict["rx"] = int((switch_dict_t1['rx_bytes'] - switch_dict_t0['rx_bytes']) / (delay_time * 128))
+            bandwidth_dict["tx"] = int((switch_dict_t1['tx_bytes'] - switch_dict_t0['tx_bytes']) / (delay_time * 128))
 
             return Response(content_type='application/json',
                             body=json.dumps(bandwidth_dict))
