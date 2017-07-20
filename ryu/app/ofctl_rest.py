@@ -360,7 +360,7 @@ class StatsController(ControllerBase):
     
     def to_dict(self, link):
         return {'src' : {'dpid' : format(link.src.dpid, "x"),'port':link.src.port_no},
-                'dest': {'dpid' : format(link.dst.dpid, "x"),'port':link.dst.port_no}}
+                'dst' : {'dpid' : format(link.dst.dpid, "x"),'port':link.dst.port_no}}
 
     def get_dpids(self, req, **_kwargs):
         dps = list(self.dpset.dps.keys())
