@@ -360,20 +360,17 @@ class StatsController(ControllerBase):
         self.topology_api_app = data['topology_api_app']
     
     def to_dict(self, link):
-        return {'src' : {'dpid' : hex(link.src.dpid),'port':link.src.port_no},
-                'dest': {'dpid' : hex(link.dst.dpid),'port':link.dst.port_no}}
+        return {'src' : {'dpid' : format(link.src.dpid, "x"),'port':link.src.port_no},
+                'dest': {'dpid' : format(link.dst.dpid, "x"),'port':link.dst.port_no}}
 
     def get_dpids(self, req, **_kwargs):
         dps = list(self.dpset.dps.keys())
         body = json.dumps(dps)
         return Response(content_type='application/json', body=body)
 
-    def get_topo(self, req, **kwargs):
+    def get_topology(self, req, **kwargs):
         links_list = get_link(self.topology_api_app, None)
-        #links = [({'src':{'dpid':hex(link.src.dpid),'port':link.src.port_no},'dest':{'dpid' : hex(link.dst.dpid),'port':link.dst.port_no}}) for link in links_list]
-        body = json.dumps([self.to_dict(link) for link in links_list])
-        #body = json.dumps([link for link in links])
-        #print(body)
+        body = json.dumps({"links" : [self.to_dict(link) for link in links_list]})
         return Response(content_type='application/json', body=body)
 
     @sdn_method
@@ -600,9 +597,9 @@ class RestStatsApi(app_manager.RyuApp):
 
         wsgi.registory['StatsController'] = self.data
         
-        uri = '/topo'
+        uri = '/topology'
         mapper.connect('stats', uri,
-                       controller=StatsController, action='get_topo',
+                       controller=StatsController, action='get_topology',
                        conditions=dict(method=['GET']))
 
         uri = '/linkbandwidth'
