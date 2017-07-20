@@ -19,7 +19,6 @@ import ast
 
 import time
 import urllib
-from pprint import pprint
 
 from ryu.base import app_manager
 from ryu.controller import ofp_event
