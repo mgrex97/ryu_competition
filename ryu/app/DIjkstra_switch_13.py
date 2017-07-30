@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright (C) 2011 Nippon Telegraph and Telephone Corporation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +24,7 @@ from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import arp
 from ryu.lib.packet import ether_types
-from ryu.topology import event,switches
+from ryu.topology import event
 from ryu.topology.api import get_switch, get_link, get_host
 from collections import defaultdict
 from pprint import pprint
@@ -35,35 +36,55 @@ class SimpleSwitch13(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
-        self.switch_list = []
-        self.hosts_list = []
-        self.link_dict = {}
+        self.switch_list = []                   # Init in get_topology()
+        self.switchs_datapath = {}              # Init in get_topology()
+        self.link_dict = {}                     # Init in get_topology()
+        self.hosts_list = {}                    # Init in get_hosts()
         self.mac_to_port = {}
         self.arp_table = {}
         self.arp_switch_table = {}
+        self.Dijkstra_Graph = Dijkstra.Graph()  # Init in get_topology()
 
     @set_ev_cls(event.EventSwitchEnter)
-    def get_topology(self, req, **kwargs):
+    def get_switchs(self, req):
         switches = get_switch(self, None)
+
         self.switch_list = [switch.dp.id for switch in switches]
+        self.switchs_datapath = {switch.dp.id : switch.dp for switch in switches}
 
+        # Set Dijkstra Graph
+        self.Dijkstra_Graph.set_node(self.switch_list)
+        # print(self.Dijkstra_Graph.nodes)
+
+    @set_ev_cls(event.EventSwitchEnter)
+    def get_links(self, req):
+        self._get_link()
+
+    def _get_link(self):
         links = get_link(self,None)
-        self.link_dict = { (link.src.dpid, link.dst.dpid) : {
-                                'src_port_no' : link.src.port_no, 
-                                'weight' : 1
-                            } for link in links }
-        # pprint(self.switch_list)
-        # pprint(self.link_dict)
-        # print('src_port_no:',self.link_dict[(2,3)]['src_port_no'])
-        # print('weight:',self.link_dict[(2,3)]['weight'])
+    
+        self.link_dict = { 
+            (link.src.dpid, link.dst.dpid) : {
+               'src_port' : link.src.port_no,
+               'dst_port' : link.dst.port_no
+            } for link in links }
 
-    def get_hosts(self, req, **kwargs):
+        self.Dijkstra_Graph.edges = defaultdict(list)
+        for link in links :
+            self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
+        # print(self.Dijkstra_Graph.edges)
+
+    @set_ev_cls(event.EventHostAdd)
+    def get_hosts(self, req):
         hosts = get_host(self, None)
-        self.hosts_list = [ { host.mac : {
-                                'dpid' : host.port.dpid,
-                                'port_no' : host.port.port_no}
-                            } for host in hosts]
-        # pprint(self.hosts_list)
+        self.hosts_list = {
+            host.mac : {
+                'dpid' : host.port.dpid,
+                'port_no' : host.port.port_no
+            } for host in hosts }
+        # hosts_node = [host.port.dpid for host in hosts]
+        # while len(hosts_node) > 1 :
+            # Dijkstra.dijsktra(self.Dijkstra_Graph, hosts_node.pop(), hosts_node)
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -101,6 +122,30 @@ class SimpleSwitch13(app_manager.RyuApp):
                                     match=match, instructions=inst)
         datapath.send_msg(mod)
 
+    def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src, dst):
+        Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
+        while Dijkstra_path == None :
+            print("\u2620 Dijkstra_ERROR \u2620")
+            self._get_link()
+            Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
+        # print("Dijkstra_path:",Dijkstra_path)
+        if len(Dijkstra_path) > 1:
+            prev_dpid = src_dpid
+            for index, dpid in enumerate(Dijkstra_path[:-1]) :
+                next_dpid = Dijkstra_path[index + 1]
+                print("prev_dpid:", prev_dpid, "dpid:", dpid, "next_dpid:", next_dpid)
+                datapath = self.switchs_datapath[dpid]
+                in_port  = self.link_dict[(dpid, prev_dpid)]['src_port']
+                out_port = self.link_dict[(dpid, next_dpid)]['src_port']
+                print("in_port:", in_port, "out_port:", out_port)
+                parser = datapath.ofproto_parser
+                # match = parser.OFPMatch(in_port=in_port, eth_src=src, eth_dst=dst)
+                match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+                actions = [parser.OFPActionOutput(out_port)]
+                self.add_flow(datapath, 1, match, actions)
+                prev_dpid = dpid
+        return Dijkstra_path
+        
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         # If you hit this you might want to increase
@@ -121,25 +166,34 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP:
             # ignore lldp packet
-            return
-        if eth.ethertype == ether_types.ETH_TYPE_ARP:
+            return            
+
+        src_dpid = datapath.id
+        if dst != ETHERNET_MULTICAST :
+            self.logger.info("packet type [%s] in %s %s %s %s", eth.ethertype, src_dpid, src, dst, in_port)
+            if dst in self.hosts_list :
+                dst_dpid = self.hosts_list[dst]['dpid']
+                if src_dpid == dst_dpid:
+                    out_port = self.hosts_list[dst]['port_no']
+                    print("End out_port:", out_port)
+                else:
+                    print("---Dijkstra Start---")
+                    print("src_dpid:",src_dpid, "dst_dpid",dst_dpid)
+                    next_dpid = self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src, dst)[0]
+                    out_port = self.link_dict[(src_dpid, next_dpid)]['src_port']
+                    print("next_dpid:", next_dpid, "out_port:", out_port)
+                    print("---Dijkstra End---")
+            else:
+                return None
+        elif eth.ethertype == ether_types.ETH_TYPE_ARP :
             pkt_arp = pkt.get_protocols(arp.arp)[0]
             self.arp_table[pkt_arp.src_ip] = src
-
-        dpid = datapath.id
-        self.mac_to_port.setdefault(dpid, {})
-        self.mac_to_port[dpid][src] = in_port
-        self.logger.info("packet type [%s] in %s %s %s %s", eth.ethertype, dpid, src, dst, in_port)
-
-        if dst in self.mac_to_port[dpid]:
-            out_port = self.mac_to_port[dpid][dst]
-        elif eth.ethertype == ether_types.ETH_TYPE_ARP \
-        and self.arp_proxy(eth, pkt_arp, datapath, in_port, msg.buffer_id):
-            print("☞ APR_PROXY ☚")
-            return None
+            if self.arp_proxy(eth, pkt_arp, datapath, in_port, msg) :
+                print("\u261e APR_PROXY \u261a")
+                return None
         else:
-            out_port = ofproto.OFPP_FLOOD
-            print("☠ OFPP_FLOOD ☠")
+            print("\u2620 NOT_MATCH \u2620")
+            return None
 
         actions = [parser.OFPActionOutput(out_port)]
 
@@ -161,7 +215,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
 
-    def arp_proxy(self, eth, pkt_arp, datapath, in_port, msg_buffer_id):
+    def arp_proxy(self, eth, pkt_arp, datapath, in_port, msg):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         arp_src_ip = pkt_arp.src_ip
@@ -169,12 +223,24 @@ class SimpleSwitch13(app_manager.RyuApp):
         eth_dst = eth.dst
         eth_src = eth.src
         
+        data = None
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+            data = msg.data
+        
         if eth_dst == ETHERNET_MULTICAST:
             if self.arp_switch_table.setdefault(
             (datapath.id, eth_src, arp_dst_ip), in_port) != in_port:
-                out = parser.OFPPacketOut(datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER,
-                                          in_port=in_port, actions=[], data=None)
+                out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                          in_port=in_port, actions=[], data=data)
                 datapath.send_msg(out)
+                return True
+            else:
+                out_port = ofproto.OFPP_FLOOD
+                actions = [parser.OFPActionOutput(out_port)]
+                out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                  in_port=in_port, actions=actions, data=data)
+                datapath.send_msg(out)
+                print("\u2620 ARP_FLOOD \u2620")
                 return True
 
         if pkt_arp.opcode == arp.ARP_REQUEST:
@@ -196,4 +262,5 @@ class SimpleSwitch13(app_manager.RyuApp):
                         actions=actions, data=ARP_Reply.data)
                 datapath.send_msg(out)
                 return True
+
         return False
