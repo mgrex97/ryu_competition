@@ -40,42 +40,74 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.switchs_datapath = {}              # Init in get_topology()
         self.link_dict = {}                     # Init in get_topology()
         self.hosts_list = {}                    # Init in get_hosts()
-        self.mac_to_port = {}
         self.arp_table = {}
         self.arp_switch_table = {}
         self.Dijkstra_Graph = Dijkstra.Graph()  # Init in get_topology()
 
     @set_ev_cls(event.EventSwitchEnter)
-    def get_switchs(self, req):
+    def Switch_Enter(self, req):
+        print("Switch_Enter")
+        self.Dijkstra_Graph = Dijkstra.Graph()
+        # self._get_switchs()
+
+    @set_ev_cls(event.EventSwitchLeave)
+    def Switch_Leave(self, req):
+        print("Switch_Leave")
+        self.Dijkstra_Graph = Dijkstra.Graph()
+        # self._get_switchs()
+
+    @set_ev_cls(event.EventLinkAdd)
+    def Link_Add(self, req):
+        print("Link_Add")
+        self.Dijkstra_Graph = Dijkstra.Graph()
+        # self._get_link()
+
+    @set_ev_cls(event.EventLinkDelete)
+    def Link_Delete(self, req):
+        print("Link_Delete")
+        self.Dijkstra_Graph = Dijkstra.Graph()
+        # self._get_link()
+
+    def _init_switchs(self):
+        switches = get_switch(self, None)
+        hosts = get_host(self, None)
+        # Init Switch
+        for switch in switches :
+            for host in hosts :
+                self.delete_flow(switch.dp, host.mac)
+
+    def _get_switchs(self):
         switches = get_switch(self, None)
 
         self.switch_list = [switch.dp.id for switch in switches]
         self.switchs_datapath = {switch.dp.id : switch.dp for switch in switches}
 
-        # Set Dijkstra Graph
+        # Set Dijkstra nodes
         self.Dijkstra_Graph.set_node(self.switch_list)
-        # print(self.Dijkstra_Graph.nodes)
-
-    @set_ev_cls(event.EventSwitchEnter)
-    def get_links(self, req):
-        self._get_link()
 
     def _get_link(self):
         links = get_link(self,None)
     
         self.link_dict = { 
             (link.src.dpid, link.dst.dpid) : {
-               'src_port' : link.src.port_no,
-               'dst_port' : link.dst.port_no
+               'port_no' : link.src.port_no
             } for link in links }
 
-        self.Dijkstra_Graph.edges = defaultdict(list)
+        # Set Dijkstra edges
         for link in links :
             self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
-        # print(self.Dijkstra_Graph.edges)
+
+    def _get_topo(self):
+        self.arp_table = {}
+        self.arp_switch_table = {}
+        self.Dijkstra_Graph = Dijkstra.Graph()
+        self._init_switchs()
+        self._get_switchs()
+        self._get_link()
 
     @set_ev_cls(event.EventHostAdd)
     def get_hosts(self, req):
+        print("EventHostAdd")
         hosts = get_host(self, None)
         self.hosts_list = {
             host.mac : {
@@ -96,16 +128,15 @@ class SimpleSwitch13(app_manager.RyuApp):
                                           ofproto.OFPCML_NO_BUFFER)]
         self.add_flow(datapath, 0, match, actions)
 
-    def delete_flow(self, datapath):
+    def delete_flow(self, datapath, dst):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        for dst in self.mac_to_port[datapath.id].keys():
-            match = parser.OFPMatch(eth_dst=dst)
-            mod = parser.OFPFlowMod(datapath=datapath, priority=1, match=match,
-                                    out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY,
-                                    command=ofproto.OFPFC_DELETE)
-            datapath.send_msg(mod)
+        match = parser.OFPMatch(eth_dst=dst)
+        mod = parser.OFPFlowMod(datapath=datapath, priority=1, match=match,
+                                out_port=ofproto.OFPP_ANY, out_group=ofproto.OFPG_ANY,
+                                command=ofproto.OFPFC_DELETE)
+        datapath.send_msg(mod)
 
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         ofproto = datapath.ofproto
@@ -126,20 +157,19 @@ class SimpleSwitch13(app_manager.RyuApp):
         Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
         while Dijkstra_path == None :
             print("\u2620 Dijkstra_ERROR \u2620")
-            self._get_link()
+            self._get_topo()
             Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
         # print("Dijkstra_path:",Dijkstra_path)
         if len(Dijkstra_path) > 1:
             prev_dpid = src_dpid
             for index, dpid in enumerate(Dijkstra_path[:-1]) :
                 next_dpid = Dijkstra_path[index + 1]
-                print("prev_dpid:", prev_dpid, "dpid:", dpid, "next_dpid:", next_dpid)
+                # print("prev_dpid:", prev_dpid, "dpid:", dpid, "next_dpid:", next_dpid)
                 datapath = self.switchs_datapath[dpid]
-                in_port  = self.link_dict[(dpid, prev_dpid)]['src_port']
-                out_port = self.link_dict[(dpid, next_dpid)]['src_port']
-                print("in_port:", in_port, "out_port:", out_port)
+                in_port  = self.link_dict[(dpid, prev_dpid)]['port_no']
+                out_port = self.link_dict[(dpid, next_dpid)]['port_no']
+                # print("in_port:", in_port, "out_port:", out_port)
                 parser = datapath.ofproto_parser
-                # match = parser.OFPMatch(in_port=in_port, eth_src=src, eth_dst=dst)
                 match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
                 actions = [parser.OFPActionOutput(out_port)]
                 self.add_flow(datapath, 1, match, actions)
@@ -175,15 +205,16 @@ class SimpleSwitch13(app_manager.RyuApp):
                 dst_dpid = self.hosts_list[dst]['dpid']
                 if src_dpid == dst_dpid:
                     out_port = self.hosts_list[dst]['port_no']
-                    print("End out_port:", out_port)
+                    # print("End out_port:", out_port)
                 else:
-                    print("---Dijkstra Start---")
-                    print("src_dpid:",src_dpid, "dst_dpid",dst_dpid)
+                    # print("---Dijkstra Start---")
+                    # print("src_dpid:",src_dpid, "dst_dpid",dst_dpid)
                     next_dpid = self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src, dst)[0]
-                    out_port = self.link_dict[(src_dpid, next_dpid)]['src_port']
-                    print("next_dpid:", next_dpid, "out_port:", out_port)
-                    print("---Dijkstra End---")
+                    out_port = self.link_dict[(src_dpid, next_dpid)]['port_no']
+                    # print("next_dpid:", next_dpid, "out_port:", out_port)
+                    # print("---Dijkstra End---")
             else:
+                print("\u2620 NOT_MATCH \u2620")
                 return None
         elif eth.ethertype == ether_types.ETH_TYPE_ARP :
             pkt_arp = pkt.get_protocols(arp.arp)[0]
@@ -195,6 +226,8 @@ class SimpleSwitch13(app_manager.RyuApp):
             print("\u2620 NOT_MATCH \u2620")
             return None
 
+
+        if out_port == None : return None
         actions = [parser.OFPActionOutput(out_port)]
 
         # install a flow to avoid packet_in next time
