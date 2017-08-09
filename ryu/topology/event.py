@@ -87,6 +87,19 @@ class EventSwitchReply(event.EventReplyBase):
         super(EventSwitchReply, self).__init__(dst)
         self.switches = switches
 
+
+class EventDeleteHostsRequest(event.EventRequestBase):
+    def __init__(self, host_mac):
+        super(EventInitHostsReply, self).__init__(dst)
+        self.dst = 'switches'
+        self.host_mac = host_mac
+
+
+class EventDeletHostReply(event.EventReplyBase):
+    def __init__(self, dst,state = False):
+        super(EventInitHostsReply, self).__init__(dst)
+        self.state = state
+
     def __str__(self):
         return 'EventSwitchReply<dst=%s, %s>' % \
             (self.dst, self.switches)

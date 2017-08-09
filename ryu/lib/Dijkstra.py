@@ -6,6 +6,10 @@ class Graph:
         self.edges = defaultdict(list)
         self.distances = {}
 
+    def init_edges(self):
+        self.edges = defaultdict(list)
+        self.distances = {}
+
     def set_node(self, value):
         self.nodes = set(value)
 
@@ -20,6 +24,26 @@ class Graph:
         self.edges[from_node].append(to_node)
         # self.edges[to_node].append(from_node)
         self.set_distance(from_node, to_node, distance)
+
+    def del_node(self, value):
+        if value in self.nodes:
+            self.nodes.remove(value)
+        self.edges.pop(value, None)
+        for edge in self.edges:
+            if value in self.edges[edge]:
+                self.edges[edge].remove(value)
+                self.del_distance(edge, value)
+
+    def del_edge(self, from_node, to_node):
+        if to_node in self.edges[from_node] :
+            self.edges[from_node].remove(to_node)
+        if from_node in self.edges[to_node] :
+            self.edges[to_node].remove(from_node)
+        self.del_distance(from_node, to_node)
+
+    def del_distance(self, from_node, to_node):
+        self.distances.pop((from_node, to_node), None)
+        self.distances.pop((to_node, from_node), None)
 
 def dijsktra(graph, initial, ends):
     visited = {initial: 0}
@@ -48,16 +72,14 @@ def dijsktra(graph, initial, ends):
                 visited[edge] = weight
                 path[edge] = min_node
 
-    # print(path)
-    if type(ends) is list :
-        for end in ends:
-            return get_way(path, initial, end)
+    if initial not in path.values():
+        return None
     else:
         return get_way(path, initial, ends)
     # return path
 
 def get_way(path, initial, end):
-    if end not in path : return None
+    if end not in path: return None
     way = []
     if path[end] != initial:
         way = get_way(path, initial, path[end])

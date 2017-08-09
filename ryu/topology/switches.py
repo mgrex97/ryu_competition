@@ -31,6 +31,7 @@ from ryu.lib.dpid import dpid_to_str, str_to_dpid
 from ryu.lib.port_no import port_no_to_str
 from ryu.lib.packet import packet, ethernet
 from ryu.lib.packet import lldp, ether_types
+from ryu.ofproto.ether import ETH_TYPE_IPV6
 from ryu.ofproto.ether import ETH_TYPE_LLDP
 from ryu.ofproto.ether import ETH_TYPE_CFM
 from ryu.ofproto import nx_match
@@ -195,6 +196,10 @@ class HostState(dict):
     def add(self, host):
         mac = host.mac
         self.setdefault(mac, host)
+
+    def delete(self, host_mac):
+        if host_mac in self:
+            del self[host_mac]
 
     def update_ip(self, host, ip_v4=None, ip_v6=None):
         mac = host.mac
@@ -507,10 +512,10 @@ class Switches(app_manager.RyuApp):
     LLDP_PACKET_LEN = len(LLDPPacket.lldp_packet(0, 0, DONTCARE_STR, 0))
 
     LLDP_SEND_GUARD = .05
-    LLDP_SEND_PERIOD_PER_PORT = .9
-    TIMEOUT_CHECK_PERIOD = 5.
+    LLDP_SEND_PERIOD_PER_PORT = .4
+    TIMEOUT_CHECK_PERIOD = 1.
     LINK_TIMEOUT = TIMEOUT_CHECK_PERIOD * 2
-    LINK_LLDP_DROP = 5
+    LINK_LLDP_DROP = 3
 
     def __init__(self, *args, **kwargs):
         super(Switches, self).__init__(*args, **kwargs)
@@ -522,6 +527,7 @@ class Switches(app_manager.RyuApp):
         self.links = LinkState()      # Link class -> timestamp
         self.hosts = HostState()      # mac address -> Host class list
         self.is_active = True
+        self.dpid_to_host = {}
 
         self.link_discovery = self.CONF.observe_links
         if self.link_discovery:
@@ -672,6 +678,10 @@ class Switches(app_manager.RyuApp):
             # dp.id is None when datapath dies before handshake
             if dp.id is None:
                 return
+
+            if dp.id in self.dpid_to_host:
+                for host_mac in self.dpid_to_host[dp.id].values():
+                    self.hosts.delete(host_mac)
 
             switch = self._get_switch(dp.id)
             if switch:
@@ -839,7 +849,7 @@ class Switches(app_manager.RyuApp):
         eth, pkt_type, pkt_data = ethernet.ethernet.parser(msg.data)
 
         # ignore lldp and cfm packets
-        if eth.ethertype in (ETH_TYPE_LLDP, ETH_TYPE_CFM):
+        if eth.ethertype in (ETH_TYPE_LLDP, ETH_TYPE_CFM, ETH_TYPE_IPV6):
             return
 
         datapath = msg.datapath
@@ -862,9 +872,11 @@ class Switches(app_manager.RyuApp):
 
         host_mac = eth.src
         host = Host(host_mac, port)
+        self.dpid_to_host.setdefault(dpid, {})
 
         if host_mac not in self.hosts:
             self.hosts.add(host)
+            self.dpid_to_host[dpid][str(port_no)] = host_mac
             ev = event.EventHostAdd(host)
             self.send_event_to_observers(ev)
 
@@ -883,6 +895,19 @@ class Switches(app_manager.RyuApp):
             # TODO: need to handle NDP
             ipv6_pkt, _, _ = pkt_type.parser(pkt_data)
             self.hosts.update_ip(host, ip_v6=ipv6_pkt.src)
+
+    	"""
+        @set_ev_cls(event.EventDeleteHostsRequest)
+        def delete_host_handler(self, req):
+            host_mac = req.host_mac
+            state = False
+            if host_mac in self.hosts:
+                del self.hosts[host_mac]
+                state = True
+
+            rep = event.EventDeletHostReply(req.src, state)
+            self.reply_to_request(req, rep)
+    	"""
 
     def send_lldp_packet(self, port):
         try:
