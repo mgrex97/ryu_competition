@@ -20,7 +20,7 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER, DEAD_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
-from ryu.ofproto.ether import ETH_TYPE_IPV6, ETH_TYPE_LLDP
+from ryu.ofproto.ether import ETH_TYPE_IPV6, ETH_TYPE_LLDP, ETH_TYPE_ARP
 from ryu.lib import Dijkstra
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
@@ -34,44 +34,73 @@ from pprint import pprint
 
 ETHERNET_MULTICAST = 'ff:ff:ff:ff:ff:ff'
 
-INIT_TABLE_ID = 2
-
-class SimpleSwitch13(app_manager.RyuApp):
+class BestPerformance(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
         self.switchs_datapath = {}
-        super(SimpleSwitch13, self).__init__(*args, **kwargs)
+        super(BestPerformance, self).__init__(*args, **kwargs)
         self.arp_table = {}
         self.arp_switch_table = {}
-        self.switch_to_host = {}        # dpid : [host_mac,...]
-        self.Dijkstra_Graph = Dijkstra.Graph()  # Init in get_topology()
-        self.path_sets = {}             # path(src,dest) : [dpid,....]
-        self.hosts_list = {}            # host mac : {
-                                        #   dpid: ...,
-                                        #   port: ...,
+        # Saving switch port relevant to which link.
+        self.switch_to_link = {}        # {
+                                        #    dpid : {
+                                        #        port_no: link,
+                                        #        ...
+                                        #    },...
                                         # }
-        self.link_dict = {}             # link(src,dest) : {
+        # Which and how many hosts connect to the Switch.
+        self.switch_to_host = {}        # {
+                                        #   dpid : [host_mac,...],...
+                                        # }
+        self.Dijkstra_Graph = Dijkstra.Graph()  # Init in get_topology()
+        # Saving the dpid list which the path going through.
+        self.path_sets = {}             #
+                                        # {
+                                        #    path(src_mac,dest_mac) : [dpid,...],
+                                        #    ...
+                                        # }
+        # host connect to which switch and which port
+        self.hosts_list = {}            # {
+                                        #    host mac : {
+                                        #       'dpid' : dpid,
                                         #       'port_no' : port_no,
-                                        #       'path_list' : [(src_mac, dest_mac),...] }
-        self.table_id_counter = {}      # datapath.id : table_id(This value will increase step by step. Init is 1.)
+                                        #    },...
+                                        # }
+        # Recod the link will affect which paths.
+        self.link_dict = {}             # {
+                                        #     link(src,dest) : {
+                                        #         'port_no' : port_no,
+                                        #         'path_list' : [(src_mac, dest_mac),...] 
+                                        #     },...
+                                        # }
 
     @set_ev_cls(event.EventLinkAdd)
-    def Link_Add(self, req):
-        self._get_link()
-
-    @set_ev_cls(event.EventLinkDelete)
-    def Link_Delete(self, event):
-        print("Link_delete")
+    def Link_Add(self, event):
+        # Saving new link data.
         link = event.link
+
         link_condition = (link.src.dpid, link.dst.dpid)
-        self.Dijkstra_Graph.del_edge(link.src.dpid,link.dst.dpid)
-        
+
+        self.link_dict[link_condition] = {
+            'port_no' : link.src.port_no,
+            'path_list' : []
+        }
+
+        self.switch_to_link[link.src.dpid][link.src.port_no] = link
+
+        # Set Dijkstra edges
+        self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
+
+    def Link_Delete(self, link, state = True):
+        # Delete the flows of paths, if some paths go through this link.
+        link_condition = (link.src.dpid, link.dst.dpid)
+        self.Dijkstra_Graph.del_edge(link.src.dpid, link.dst.dpid)
+
         # This path which is been deleted now will affect exist paths.
         if link_condition in self.link_dict:
-            break_point = link.src.dpid
             for path_condition  in self.link_dict[link_condition]['path_list']:
-                # host mac
+                # get host mac
                 src_mac = path_condition[0]
                 dst_mac = path_condition[1]
                 if src_mac not in self.hosts_list \
@@ -84,85 +113,77 @@ class SimpleSwitch13(app_manager.RyuApp):
                     # Delete the flow which is relevant to the path.
                     for dpid in self.path_sets[path_condition][:-1]:
                         # if dp_id is not break_point and reached_break_point:
-                        if dpid in self.switchs_datapath:
-                            self.delete_flow(self.switchs_datapath[dpid], dst_mac)
+                        # if dpid in self.switchs_datapath and state == True:
+                        self.delete_flow(self.switchs_datapath[dpid], dst_mac)
                         # reached_break_point = False
                     del self.path_sets[path_condition]
                     
                     # add_Dijkstra_path_flow(src_dpid,dst_dpid,src_mac,dst_mac)
             del self.link_dict[link_condition]
 
-    # Delet all flows which is in the switch.
-    """def _init_switchs(self):
-        switches = get_switch(self, None)
-        hosts = get_host(self, None)
-        # Init Switch
-        for switch in switches :
-            for host in hosts :
-                self.delete_flow(switch.dp, host.mac)
-    """
-    def _get_link(self):
-        links = get_link(self,None)
-        
-        # Iint link_dict.
-        self.link_dict = {
-            (link.src.dpid, link.dst.dpid) : {
-               'port_no' : link.src.port_no,
-               'path_list' : []
-            } for link in links
-        }
-
-        # Set Dijkstra edges
-        for link in links:
-            self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
-
-    def _get_topo(self):
-        self.arp_table = {}
-        self.arp_switch_table = {}
-        self.Dijkstra_Graph.init_edges()
-        # _init_switchs will clean all flow.
-        # self._init_switchs()
-        # get new link and save to Dijkstra_Graph
-        self._get_link()
 
     @set_ev_cls(event.EventHostAdd)
     def hosts_up(self, event):
+        # Save new host data.
         host = event.host
-        print("host up :", host.mac)
-        # Get the datapath(siwtch) that host is connecting.
-        datapath = self.switchs_datapath[int(host.port.dpid)]
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        out_port = host.port.port_no
-        
+        dpid = int(host.port.dpid)
+        switch_port = host.port.port_no
+
         self.hosts_list[host.mac] = {
-            'dpid' : datapath.id,
-            'port_no' : out_port
+            'dpid' : dpid,
+            'port_no' : switch_port
         }
-        
-        self.switch_to_host[datapath.id].append(host.mac)
-        
-        # Send flow to switch, this flow will redirect packets to host when dst_mac equal to the host.mac.
-        # match = parser.OFPMatch(eth_dst = host.mac)
-        # actions = [parser.OFPActionOutput(out_port)]
-        
-        #self.add_flow(datapath, 0, match, actions)
-    
+
+        self.switch_to_host[dpid].append(host.mac)
+
+
+    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
+    def _port_status_handler(self, ev):
+        # Check port modify will affect which link or host.
+        msg = ev.msg
+        dpid = msg.datapath.id
+        reason = msg.reason
+        port_no = msg.desc.port_no
+        ofproto = msg.datapath.ofproto
+
+        if ofproto.OFPP_CONTROLLER == port_no:
+            self.logger.info("port controller %s", port_no)
+            return
+
+        if reason == ofproto.OFPPR_ADD:
+            pass
+        elif reason in (ofproto.OFPPR_MODIFY, ofproto.OFPPR_DELETE):
+            if dpid in self.switch_to_link and port_no in self.switch_to_link[dpid]:
+                link = self.switch_to_link[dpid][port_no]
+                self.Link_Delete(link, True)
+                del self.switch_to_link[dpid][port_no]
+        else:
+            self.logger.info("Illeagal port state %s %s", port_no, reason)
+
+
     # Handle the siwtch disconnect.
     @set_ev_cls(ofp_event.EventOFPStateChange, DEAD_DISPATCHER)
     def Switch_Disconnect(self, event):
+        # When switch disconnect, clear the relevant data.
         dp_id = event.datapath.id
+
         if dp_id in self.switchs_datapath:
             del self.switchs_datapath[dp_id]
-            del self.table_id_counter[dp_id]
+            # clear host data which is connect to this switch.
             for host_mac in self.switch_to_host[dp_id]:
                 del self.hosts_list[host_mac]
-                # self.send_request(event.EventDeleteHostsRequest(host_mac))
             del self.switch_to_host[dp_id]
+            
+            if dp_id in self.switch_to_link:
+                for port_no, link in self.switch_to_link[dp_id]:
+                    self.Link_Delete(link, False)
+                    del self.switch_to_link[dp_id][port_no]
+            
             self.Dijkstra_Graph.del_node(dp_id)
             self.arp_table = {}
             self.arp_switch_table = {}
-    
+
+
     # Handle the switch connect.
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -172,9 +193,9 @@ class SimpleSwitch13(app_manager.RyuApp):
         match = parser.OFPMatch()
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]
-        self.table_id_counter[datapath.id] = INIT_TABLE_ID
         self.switchs_datapath[datapath.id] = datapath
         self.switch_to_host[datapath.id] = []
+        self.switch_to_link[datapath.id] = {}
         self.Dijkstra_Graph.add_node(datapath.id)
         
         self.add_flow(datapath, 0, match, actions)
@@ -208,48 +229,52 @@ class SimpleSwitch13(app_manager.RyuApp):
                                     match=match, instructions=inst, table_id=table_id)
         datapath.send_msg(mod)
 
-    def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src, dst):
-        path_condition = (src, dst)
-        self.path_sets[path_condition] = []
+    def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src_mac, dst_mac, src_in_port):
+        # Caculate the path then send flows.
+        path_condition = (src_mac, dst_mac)
+        if path_condition in self.path_sets:
+            print("path exist")
+            return None
+
         Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
-        while Dijkstra_path == None :
-            print("\u2620 Dijkstra_ERROR \u2620")
-            self._get_topo()
-            print(
-                "Nodes:", self.Dijkstra_Graph.nodes, "\n"
-                "edges:", self.Dijkstra_Graph.edges
-            )
-            Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
-        
+
+        # Can't find any path.
+        if Dijkstra_path == None :
+            print("\u2620 No path \u2620")
+            return None
+
+        self.path_sets[path_condition] = []
+
         if len(Dijkstra_path) > 1:
             prev_dpid = src_dpid
-            for index, dpid in enumerate(Dijkstra_path[:-1]) : # Dijkstra_path[:-1]
+            for index, dpid in enumerate(Dijkstra_path[:-1]) :
                 next_dpid = Dijkstra_path[index + 1]
-                # print("prev_dpid:", prev_dpid, "dpid:", dpid, "next_dpid:", next_dpid)
-                    
+
                 datapath = self.switchs_datapath[dpid]
-                in_port  = self.link_dict[(dpid, prev_dpid)]['port_no']
+                if src_dpid != dpid:
+                    in_port  = self.link_dict[(dpid, prev_dpid)]['port_no']
                 out_port = self.link_dict[(dpid, next_dpid)]['port_no']
-                # print("in_port:", in_port, "out_port:", out_port)
                 parser = datapath.ofproto_parser
-                match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+
+                if src_dpid != dpid:
+                    match = parser.OFPMatch(in_port = in_port, eth_dst = dst_mac)
+                else:
+                    match = parser.OFPMatch(in_port = src_in_port, eth_dst = dst_mac)
                 actions = [parser.OFPActionOutput(out_port)]
-                
+
                 # Record table_ids of the Path.
                 self.path_sets[path_condition].append(datapath.id)
-                
+
                 # Recod link which will affect by the path.
-                self.link_dict[(datapath.id,next_dpid)]['path_list'].append(path_condition)
-                
-                self.add_flow(datapath, 1, match, actions)#, table_id = self.table_id_counter[datapath.id])
-                
-                # Table_id is been used, so we have to increase the id.
-                self.table_id_counter[datapath.id] += 1
-                
+                self.link_dict[(dpid,next_dpid)]['path_list'].append(path_condition)
+
+                self.add_flow(datapath, 1, match, actions)
+
                 prev_dpid = dpid
             self.path_sets[path_condition].append(Dijkstra_path[-1])
         return Dijkstra_path
-        
+
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         # If you hit this you might want to increase
@@ -265,51 +290,46 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
-        src = eth.src
-        dst = eth.dst
+        src_mac = eth.src
+        dst_mac = eth.dst
+        out_port = None
 
         if eth.ethertype in (ETH_TYPE_LLDP ,ETH_TYPE_IPV6):
-            # ignore lldp packet
+            # ignore lldp and IPV6 packet
             return            
 
         src_dpid = datapath.id
-        if dst != ETHERNET_MULTICAST:
-            # self.logger.info("packet type [%s] in %s %s %s %s", eth.ethertype, src_dpid, src, dst, in_port)
-            # pprint(self.hosts_list)
-            # print(dst)
-            if dst in self.hosts_list:
-                dst_dpid = self.hosts_list[dst]['dpid']
-                # self.logger.info("src_dpid %s dst_dpid %s", src_dpid, dst_dpid)
+        if dst_mac != ETHERNET_MULTICAST:
+            if dst_mac in self.hosts_list:
+                dst_dpid = self.hosts_list[dst_mac]['dpid']
+
                 if src_dpid == dst_dpid:
-                    out_port = self.hosts_list[dst]['port_no']
-                    # print("End out_port:", out_port)
+                    out_port = self.hosts_list[dst_mac]['port_no']
                 else:
-                    # print("---Dijkstra Start---")
-                    # print("src_dpid:",src_dpid, "dst_dpid",dst_dpid)
-                    next_dpid = self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src, dst)[0]
-                    out_port = self.link_dict[(src_dpid, next_dpid)]['port_no']
-                    # print("next_dpid:", next_dpid, "out_port:", out_port)
-                    # print("---Dijkstra End---")
+                    self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src_mac, dst_mac, in_port)
+                    return None
             else:
+                # dst not in host_list means host not exist.
                 # print("\u2620 NOT_MATCH \u2620")
                 return None
-        elif eth.ethertype == ether_types.ETH_TYPE_ARP :
+        elif eth.ethertype == ETH_TYPE_ARP :
             pkt_arp = pkt.get_protocols(arp.arp)[0]
-            self.arp_table[pkt_arp.src_ip] = src
+            self.arp_table[pkt_arp.src_ip] = src_mac
+            # arp proxy
             if self.arp_proxy(eth, pkt_arp, datapath, in_port, msg) :
                 # print("\u261e APR_PROXY \u261a")
                 return None
         else:
-            # print("\u2620 NOT_MATCH \u2620")
+            print("\u2620 NOT_MATCH \u2620 : ", end='')
+            print("packet type [%s] in %s %s %s %s", eth.ethertype, src_dpid, src_mac, dst, in_port)
             return None
-
 
         if out_port == None : return None
         actions = [parser.OFPActionOutput(out_port)]
 
         # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+            match = parser.OFPMatch(in_port=in_port, eth_dst=dst_mac)
             # verify if we have a valid buffer_id, if yes avoid to send both
             # flow_mod & packet_out
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:

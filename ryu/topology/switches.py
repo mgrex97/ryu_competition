@@ -512,10 +512,10 @@ class Switches(app_manager.RyuApp):
     LLDP_PACKET_LEN = len(LLDPPacket.lldp_packet(0, 0, DONTCARE_STR, 0))
 
     LLDP_SEND_GUARD = .05
-    LLDP_SEND_PERIOD_PER_PORT = .4
-    TIMEOUT_CHECK_PERIOD = 1.
+    LLDP_SEND_PERIOD_PER_PORT = .9
+    TIMEOUT_CHECK_PERIOD = 5.
     LINK_TIMEOUT = TIMEOUT_CHECK_PERIOD * 2
-    LINK_LLDP_DROP = 3
+    LINK_LLDP_DROP = 5
 
     def __init__(self, *args, **kwargs):
         super(Switches, self).__init__(*args, **kwargs)
@@ -602,6 +602,11 @@ class Switches(app_manager.RyuApp):
 
         return True
 
+    def _delete_host_by_dpid(self, dpid):
+        if dpid in self.dpid_to_host:
+                for host_mac in self.dpid_to_host[dpid].values():
+                    self.hosts.delete(host_mac)
+
     @set_ev_cls(ofp_event.EventOFPStateChange,
                 [MAIN_DISPATCHER, DEAD_DISPATCHER])
     def state_change_handler(self, ev):
@@ -622,6 +627,8 @@ class Switches(app_manager.RyuApp):
 
             if not dp_multiple_conns:
                 self.send_event_to_observers(event.EventSwitchEnter(switch))
+                if dp.id in self.dpid_to_host:
+                    self._delete_host_by_dpid(dp.id)
             else:
                 evt = event.EventSwitchReconnected(switch)
                 self.send_event_to_observers(evt)
@@ -679,9 +686,7 @@ class Switches(app_manager.RyuApp):
             if dp.id is None:
                 return
 
-            if dp.id in self.dpid_to_host:
-                for host_mac in self.dpid_to_host[dp.id].values():
-                    self.hosts.delete(host_mac)
+            self._delete_host_by_dpid(dp.id)
 
             switch = self._get_switch(dp.id)
             if switch:
@@ -896,7 +901,7 @@ class Switches(app_manager.RyuApp):
             ipv6_pkt, _, _ = pkt_type.parser(pkt_data)
             self.hosts.update_ip(host, ip_v6=ipv6_pkt.src)
 
-    	"""
+        """
         @set_ev_cls(event.EventDeleteHostsRequest)
         def delete_host_handler(self, req):
             host_mac = req.host_mac
@@ -907,7 +912,7 @@ class Switches(app_manager.RyuApp):
 
             rep = event.EventDeletHostReply(req.src, state)
             self.reply_to_request(req, rep)
-    	"""
+        """
 
     def send_lldp_packet(self, port):
         try:
