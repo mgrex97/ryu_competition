@@ -127,14 +127,13 @@ class BestPerformance(app_manager.RyuApp):
         # Save new host data.
         host = event.host
         dpid = int(host.port.dpid)
-        switch_port = host.port.port_no
+        switch_port = int(host.port.port_no)
 
         self.hosts_list[host.mac] = {
             'dpid' : dpid,
             'port_no' : switch_port
         }
-
-        self.switch_to_host[dpid].append(host.mac)
+        self.switch_to_host[dpid][switch_port] = host.mac
 
 
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
@@ -153,10 +152,16 @@ class BestPerformance(app_manager.RyuApp):
         if reason == ofproto.OFPPR_ADD:
             pass
         elif reason in (ofproto.OFPPR_MODIFY, ofproto.OFPPR_DELETE):
+            # Check port have link or not.
             if dpid in self.switch_to_link and port_no in self.switch_to_link[dpid]:
                 link = self.switch_to_link[dpid][port_no]
                 self.Link_Delete(link, True)
                 del self.switch_to_link[dpid][port_no]
+            # Check port have host or not.
+            elif dpid in self.switch_to_host and port_no in self.switch_to_host[dpid]:
+                host_mac = self.switch_to_host[dpid][port_no]
+                self.delete_flow(self.switchs_datapath[dpid], host_mac)
+                del self.switch_to_host[dpid][port_no]
         else:
             self.logger.info("Illeagal port state %s %s", port_no, reason)
 
@@ -168,20 +173,20 @@ class BestPerformance(app_manager.RyuApp):
         dp_id = event.datapath.id
 
         if dp_id in self.switchs_datapath:
-            del self.switchs_datapath[dp_id]
             # clear host data which is connect to this switch.
-            for host_mac in self.switch_to_host[dp_id]:
+            for port_no, host_mac in self.switch_to_host[dp_id]:
                 del self.hosts_list[host_mac]
             del self.switch_to_host[dp_id]
-            
+
             if dp_id in self.switch_to_link:
                 for port_no, link in self.switch_to_link[dp_id]:
                     self.Link_Delete(link, False)
                     del self.switch_to_link[dp_id][port_no]
-            
+
             self.Dijkstra_Graph.del_node(dp_id)
             self.arp_table = {}
             self.arp_switch_table = {}
+            del self.switchs_datapath[dp_id]
 
 
     # Handle the switch connect.
@@ -194,7 +199,7 @@ class BestPerformance(app_manager.RyuApp):
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]
         self.switchs_datapath[datapath.id] = datapath
-        self.switch_to_host[datapath.id] = []
+        self.switch_to_host[datapath.id] = {}
         self.switch_to_link[datapath.id] = {}
         self.Dijkstra_Graph.add_node(datapath.id)
         
@@ -233,14 +238,11 @@ class BestPerformance(app_manager.RyuApp):
         # Caculate the path then send flows.
         path_condition = (src_mac, dst_mac)
         if path_condition in self.path_sets:
-            print("path exist")
             return None
 
         Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
-
         # Can't find any path.
         if Dijkstra_path == None :
-            print("\u2620 No path \u2620")
             return None
 
         self.path_sets[path_condition] = []
@@ -310,18 +312,14 @@ class BestPerformance(app_manager.RyuApp):
                     return None
             else:
                 # dst not in host_list means host not exist.
-                # print("\u2620 NOT_MATCH \u2620")
                 return None
         elif eth.ethertype == ETH_TYPE_ARP :
             pkt_arp = pkt.get_protocols(arp.arp)[0]
             self.arp_table[pkt_arp.src_ip] = src_mac
             # arp proxy
             if self.arp_proxy(eth, pkt_arp, datapath, in_port, msg) :
-                # print("\u261e APR_PROXY \u261a")
                 return None
         else:
-            print("\u2620 NOT_MATCH \u2620 : ", end='')
-            print("packet type [%s] in %s %s %s %s", eth.ethertype, src_dpid, src_mac, dst, in_port)
             return None
 
         if out_port == None : return None
@@ -365,12 +363,12 @@ class BestPerformance(app_manager.RyuApp):
                 datapath.send_msg(out)
                 return True
             else:
+                # ARP_FLOOD
                 out_port = ofproto.OFPP_FLOOD
                 actions = [parser.OFPActionOutput(out_port)]
                 out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
                 datapath.send_msg(out)
-                # print("\u2620 ARP_FLOOD \u2620")
                 return True
 
         if pkt_arp.opcode == arp.ARP_REQUEST:
