@@ -82,6 +82,8 @@ def dijsktra(graph, initial, ends):
         return None
     else:
         way = get_way(path, initial, ends)
+        if way is None:
+            return None
         way.insert(0,initial)
         return way
     # return path
