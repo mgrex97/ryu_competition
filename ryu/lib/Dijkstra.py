@@ -51,10 +51,9 @@ class Graph:
         if undirected == True:
             self.distances.pop((to_node, from_node), None)
 
-def dijsktra(graph, initial, ends):
+def dijsktra(graph, initial, end):
     visited = {initial: 0}
     path = {}
-
     nodes = set(graph.nodes)
     
     while nodes:
@@ -72,6 +71,14 @@ def dijsktra(graph, initial, ends):
         nodes.remove(min_node)
         current_weight = visited[min_node]
 
+        # if found end then break
+        if end in graph.edges[min_node]:
+            weight = current_weight + graph.distances[(min_node, end)]
+            visited[end] = weight
+            path[end] = min_node
+            break
+
+        # if not find end then travel
         for edge in graph.edges[min_node]:
             weight = current_weight + graph.distances[(min_node, edge)]
             if edge not in visited or weight < visited[edge]:
@@ -81,12 +88,11 @@ def dijsktra(graph, initial, ends):
     if initial not in path.values():
         return None
     else:
-        way = get_way(path, initial, ends)
+        way = get_way(path, initial, end)
         if way is None:
             return None
         way.insert(0,initial)
         return way
-    # return path
 
 def get_way(path, initial, end):
     if end not in path: return None
