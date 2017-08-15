@@ -157,7 +157,7 @@ class RyuApp(object):
         self.observers = {}     # ev_cls -> observer-name -> states:set
         self.threads = []
         self.main_thread = None
-        self.events = hub.Queue(65535)
+        self.events = hub.Queue(100000)
         self._events_sem = hub.BoundedSemaphore(self.events.maxsize)
         if hasattr(self.__class__, 'LOGGER_NAME'):
             self.logger = logging.getLogger(self.__class__.LOGGER_NAME)

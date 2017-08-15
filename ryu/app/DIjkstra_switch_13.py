@@ -111,15 +111,16 @@ class BestPerformance(app_manager.RyuApp):
                 if path_condition in self.path_sets:
                     # reached_break_point = True
                     # Delete the flow which is relevant to the path.
-                    for dpid in self.path_sets[path_condition][:-1]:
+                    for dpid in self.path_sets[path_condition]:
                         # if dp_id is not break_point and reached_break_point:
                         # if dpid in self.switchs_datapath and state == True:
                         self.delete_flow(self.switchs_datapath[dpid], dst_mac)
+                        self.delete_flow(self.switchs_datapath[dpid], src_mac)
                         # reached_break_point = False
-                    del self.path_sets[path_condition]
-                    
-                    # add_Dijkstra_path_flow(src_dpid,dst_dpid,src_mac,dst_mac)
-            del self.link_dict[link_condition]
+                    self.path_sets.pop(path_condition)
+                    self.path_sets.pop(path_condition[::-1])
+
+            self.link_dict.pop(link_condition)
 
 
     @set_ev_cls(event.EventHostAdd)
@@ -134,7 +135,6 @@ class BestPerformance(app_manager.RyuApp):
             'port_no' : switch_port
         }
         self.switch_to_host[dpid][switch_port] = host.mac
-
 
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
     def _port_status_handler(self, ev):
@@ -156,12 +156,12 @@ class BestPerformance(app_manager.RyuApp):
             if dpid in self.switch_to_link and port_no in self.switch_to_link[dpid]:
                 link = self.switch_to_link[dpid][port_no]
                 self.Link_Delete(link, True)
-                del self.switch_to_link[dpid][port_no]
+                self.switch_to_link[dpid].pop(port_no)
             # Check port have host or not.
             elif dpid in self.switch_to_host and port_no in self.switch_to_host[dpid]:
                 host_mac = self.switch_to_host[dpid][port_no]
                 self.delete_flow(self.switchs_datapath[dpid], host_mac)
-                del self.switch_to_host[dpid][port_no]
+                self.switch_to_host[dpid].pop(port_no)
         else:
             self.logger.info("Illeagal port state %s %s", port_no, reason)
 
@@ -174,15 +174,17 @@ class BestPerformance(app_manager.RyuApp):
 
         if dp_id in self.switchs_datapath:
             # clear host data which is connect to this switch.
-            for port_no, host_mac in self.switch_to_host[dp_id]:
-                del self.hosts_list[host_mac]
-            del self.switch_to_host[dp_id]
+            if dp_id in self.switch_to_host:
+                for port_no, host_mac in self.switch_to_host[dp_id]:
+                    del self.hosts_list[host_mac]
+                del self.switch_to_host[dp_id]
 
             if dp_id in self.switch_to_link:
-                for port_no, link in self.switch_to_link[dp_id]:
+                for port_no, link in enumerate(self.switch_to_link[dp_id]):
                     self.Link_Delete(link, False)
                     del self.switch_to_link[dp_id][port_no]
 
+            del self.switch_to_link[dp_id]
             self.Dijkstra_Graph.del_node(dp_id)
             self.arp_table = {}
             self.arp_switch_table = {}
@@ -234,10 +236,27 @@ class BestPerformance(app_manager.RyuApp):
                                     match=match, instructions=inst, table_id=table_id)
         datapath.send_msg(mod)
 
-    def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src_mac, dst_mac, src_in_port):
+    def add_flow_between_switch(self, src_dpid, dst_dpid, dst_mac, in_dpid = None):
+        datapath = self.switchs_datapath[src_dpid]
+        parser = datapath.ofproto_parser
+        in_port = None
+
+        out_port = self.link_dict[(src_dpid, dst_dpid)]['port_no']
+
+        if in_dpid != None:
+            in_port = self.link_dict[(src_dpid, in_dpid)]['port_no']
+            match = parser.OFPMatch(in_port = in_port, eth_dst = dst_mac)
+        else:
+            match = parser.OFPMatch(eth_dst = dst_mac)
+
+        actions = [parser.OFPActionOutput(out_port)]
+        self.add_flow(datapath, 1, match, actions)
+
+
+    def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src_mac, dst_mac):
         # Caculate the path then send flows.
         path_condition = (src_mac, dst_mac)
-        if path_condition in self.path_sets:
+        if path_condition in self.path_sets or path_condition[::-1] in self.path_sets:
             return None
 
         Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
@@ -245,35 +264,26 @@ class BestPerformance(app_manager.RyuApp):
         if Dijkstra_path == None :
             return None
 
-        self.path_sets[path_condition] = []
+        self.path_sets[path_condition] = list(Dijkstra_path)
+        # reverse tuple
+        self.path_sets[path_condition[::-1]] = self.path_sets[path_condition]
 
         if len(Dijkstra_path) > 1:
             prev_dpid = src_dpid
-            for index, dpid in enumerate(Dijkstra_path[:-1]) :
-                next_dpid = Dijkstra_path[index + 1]
+            for index, curr_dpid in enumerate(Dijkstra_path[1:-1]) :
+                next_dpid = Dijkstra_path[index + 2]
 
-                datapath = self.switchs_datapath[dpid]
-                if src_dpid != dpid:
-                    in_port  = self.link_dict[(dpid, prev_dpid)]['port_no']
-                out_port = self.link_dict[(dpid, next_dpid)]['port_no']
-                parser = datapath.ofproto_parser
+                self.add_flow_between_switch(curr_dpid, next_dpid, dst_mac, prev_dpid)
+                self.add_flow_between_switch(curr_dpid, prev_dpid, src_mac, next_dpid)
 
-                if src_dpid != dpid:
-                    match = parser.OFPMatch(in_port = in_port, eth_dst = dst_mac)
-                else:
-                    match = parser.OFPMatch(in_port = src_in_port, eth_dst = dst_mac)
-                actions = [parser.OFPActionOutput(out_port)]
+                # Recod link will affect which path.
+                self.link_dict[(curr_dpid,next_dpid)]['path_list'].append(path_condition)
 
-                # Record table_ids of the Path.
-                self.path_sets[path_condition].append(datapath.id)
+                prev_dpid = curr_dpid
 
-                # Recod link which will affect by the path.
-                self.link_dict[(dpid,next_dpid)]['path_list'].append(path_condition)
+            self.add_flow_between_switch(Dijkstra_path[0], Dijkstra_path[1], dst_mac, in_dpid = None)
+            self.add_flow_between_switch(Dijkstra_path[-1], Dijkstra_path[-2], src_mac, in_dpid = None)
 
-                self.add_flow(datapath, 1, match, actions)
-
-                prev_dpid = dpid
-            self.path_sets[path_condition].append(Dijkstra_path[-1])
         return Dijkstra_path
 
 
@@ -298,17 +308,16 @@ class BestPerformance(app_manager.RyuApp):
 
         if eth.ethertype in (ETH_TYPE_LLDP ,ETH_TYPE_IPV6):
             # ignore lldp and IPV6 packet
-            return            
+            return
 
         src_dpid = datapath.id
         if dst_mac != ETHERNET_MULTICAST:
             if dst_mac in self.hosts_list:
                 dst_dpid = self.hosts_list[dst_mac]['dpid']
-
                 if src_dpid == dst_dpid:
                     out_port = self.hosts_list[dst_mac]['port_no']
                 else:
-                    self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src_mac, dst_mac, in_port)
+                    self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src_mac, dst_mac)
                     return None
             else:
                 # dst not in host_list means host not exist.
