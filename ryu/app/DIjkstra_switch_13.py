@@ -174,22 +174,20 @@ class BestPerformance(app_manager.RyuApp):
 
         if dp_id in self.switchs_datapath:
             # clear host data which is connect to this switch.
-            if dp_id in self.switch_to_host:
-                for port_no, host_mac in self.switch_to_host[dp_id]:
-                    del self.hosts_list[host_mac]
-                del self.switch_to_host[dp_id]
+<
+            for port_no, host_mac in self.switch_to_host[dp_id].items():
+                self.hosts_list.pop(host_mac, None)
 
             if dp_id in self.switch_to_link:
-                for port_no, link in enumerate(self.switch_to_link[dp_id]):
+                for port_no, link in self.switch_to_link[dp_id].items():
                     self.Link_Delete(link, False)
-                    del self.switch_to_link[dp_id][port_no]
 
-            del self.switch_to_link[dp_id]
+            self.switch_to_host.pop(dp_id, None)
+            self.switch_to_link.pop(dp_id, None)
+            self.switchs_datapath.pop(dp_id, None)
             self.Dijkstra_Graph.del_node(dp_id)
             self.arp_table = {}
             self.arp_switch_table = {}
-            del self.switchs_datapath[dp_id]
-
 
     # Handle the switch connect.
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
