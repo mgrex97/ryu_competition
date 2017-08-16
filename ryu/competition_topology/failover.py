@@ -61,7 +61,7 @@ def _curl_links(controller_ip='127.0.0.1'):
 def runMinimalTopo():
     "Bootstrap a Mininet network using the Minimal Topology"
 
-    #Cleanup.cleanup()
+    Cleanup.cleanup()
 
     # Create an instance of our topology
     topo = MinimalTopo()

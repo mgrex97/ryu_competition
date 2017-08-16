@@ -1,5 +1,2 @@
 #!/bin/bash
-while true
-do
-    netcat -lu -w 1 5000;
-done
+hping3 -9 Antslab -p 5000 -q -I h2-eth0

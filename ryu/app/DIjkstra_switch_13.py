@@ -174,7 +174,6 @@ class BestPerformance(app_manager.RyuApp):
 
         if dp_id in self.switchs_datapath:
             # clear host data which is connect to this switch.
-<
             for port_no, host_mac in self.switch_to_host[dp_id].items():
                 self.hosts_list.pop(host_mac, None)
 
