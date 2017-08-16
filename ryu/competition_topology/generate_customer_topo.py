@@ -11,7 +11,6 @@ from mininet.clean import Cleanup
 from customer_topology import Ring
 from customer_topology import Mesh
 
-from pprint import pprint
 from time import sleep
 import argparse
 import json
@@ -49,26 +48,28 @@ def runMinimalTopo(topo, switch_size = 25, link_size = None, controller_ip = '12
     while Links_Count != link_size and link_size != None:
         sleep(2)
         Links_Count = len(_curl_links(controller_ip))
-    print('Link Count : ', Links_Count)
+    print('start testing failover')
 
     if disconnect_links != None and len(disconnect_links) != 0:
         h1, h2 = net.get( 'h1', 'h2' )
         h1.cmd('arping -c 1 10.0.0.2')
         h2.cmd('nohup ~/ryu/ryu/competition_topology/server.sh > ~/temp.log &')
-        h1.cmd('nohup ~/ryu/ryu/competition_topology/send.sh 10.0.0.2 40 > /dev/null 2>&1 &')
+        h1.cmd('nohup ~/ryu/ryu/competition_topology/send.sh 10.0.0.2 > /dev/null 2>&1 &')
 
         pre_time = 0
         
         for current_time in disconnect_links:
-            print(current_time, " ", pre_time)
-
             sleep(int(current_time) - int(pre_time))
 
             if pre_time != 0:
                 net.configLinkStatus(
                     disconnect_links[pre_time][0],
-                    disconnect_links[pre_time][1],
-                    'up')
+                    disconnect_links[pre_time][1],'up')
+
+            if disconnect_links[current_time] in ([], None):
+                h1.cmd('kill %nohup')
+                h2.cmd('kill %nohup')
+                break
 
             net.configLinkStatus(disconnect_links[current_time][0], disconnect_links[current_time][1], 'down')
             pre_time = current_time
