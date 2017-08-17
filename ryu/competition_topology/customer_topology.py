@@ -5,6 +5,7 @@ from mininet.topo import Topo
 class Ring( Topo ):
     def __init__(self, *args, **kwargs):
         self.switch_size = kwargs.pop('switch_size')
+        self.link_size = self.switch_size * 2
         super(Ring, self).__init__(*args, **kwargs)
 
     def build( self ):
@@ -35,10 +36,11 @@ class Ring( Topo ):
         self.addLink( 'h1', 's1' )
         self.addLink( 'h2', 's' + str(int(self.switch_size / 2)) )
 
-class Mesh( Topo ):
+class Full_Mesh( Topo ):
     def __init__(self, *args, **kwargs):
         self.switch_size = kwargs.pop('switch_size')
-        super(Mesh, self).__init__(*args, **kwargs)
+        self.link_size = self.switch_size * (self_size - 1) / 2
+        super(Full_Mesh, self).__init__(*args, **kwargs)
 
     def build( self ):
         h1 = self.addHost( 'h1' )
@@ -55,3 +57,39 @@ class Mesh( Topo ):
 	    self.addLink( 'h1', 's1' )
 	    self.addLink( 'h2', 's' + str(int(self.switch_size / 2)) )
  
+
+class Mesh( Topo ):
+    def __init__(self, *args, **kwargs):
+        self.link_size = 28
+        super(Mesh, self).__init__(*args, **kwargs)
+
+    def build( self ):
+        h1 = self.addHost( 'h1' )
+        h2 = self.addHost( 'h2' )
+
+        for switch_index in range(11):
+            switch = self.addSwitch( 's' + str(switch_index + 1) , protocols='OpenFlow13')
+
+        links = [
+            (1,2),
+            (1,4),
+            (2,3),
+            (2,6),
+            (3,8),
+            (4,5),
+            (4,9),
+            (5,6),
+            (6,7),
+            (6,9),
+            (7,8),
+            (8,11),
+            (9,10),
+            (10,11)
+        ]
+
+        for link in links:
+            self.addLink( 's' + str(link[0]), 's' + str(link[1]) )
+
+        self.addLink( 'h1', 's4')
+        self.addLink( 'h2', 's11')
+
