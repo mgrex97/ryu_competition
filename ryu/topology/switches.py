@@ -829,7 +829,9 @@ class Switches(app_manager.RyuApp):
 
         link = Link(src, dst)
         if link not in self.links:
+            LOG.info('New link : %s connect to %s',src_dpid, dst_dpid)
             self.send_event_to_observers(event.EventLinkAdd(link))
+            self.send_request(event.EventLinkAddRequest(link))
 
             # remove hosts if it's not attached to edge port
             host_to_del = []

@@ -75,10 +75,10 @@ class BestPerformance(app_manager.RyuApp):
                                         #     },...
                                         # }
 
-    @set_ev_cls(event.EventLinkAdd)
-    def Link_Add(self, event):
+    @set_ev_cls(event.EventLinkAddRequest)
+    def Link_Add(self, req):
         # Saving new link data.
-        link = event.link
+        link = req.link
 
         link_condition = (link.src.dpid, link.dst.dpid)
 
@@ -91,6 +91,9 @@ class BestPerformance(app_manager.RyuApp):
 
         # Set Dijkstra edges
         self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
+
+        rep = event.EventLinkAddReply(req.src, True)
+        self.reply_to_request(req, rep)
 
     def Link_Delete(self, link, state = True):
         # Delete the flows of paths, if some paths go through this link.
@@ -120,6 +123,7 @@ class BestPerformance(app_manager.RyuApp):
                     self.path_sets.pop(path_condition)
                     self.path_sets.pop(path_condition[::-1])
 
+            LOG.info('Link Delete : %s to %s', link.src.dpid, link.dst.dpid)
             self.link_dict.pop(link_condition)
 
 
@@ -238,33 +242,43 @@ class BestPerformance(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         in_port = None
 
-        out_port = self.link_dict[(src_dpid, dst_dpid)]['port_no']
+        try:
+            out_port = self.link_dict[(src_dpid, dst_dpid)]['port_no']
+        except KeyError as e:
+            LOG.info("Link between switch %s and %s not exist.\nCan't find out_port", src_dpid, dst_dpid)
+            return False
 
         if in_dpid != None:
-            in_port = self.link_dict[(src_dpid, in_dpid)]['port_no']
+            try:
+                in_port = self.link_dict[(src_dpid, in_dpid)]['port_no']
+            except KeyError as e:
+                LOG.info("Link between switch %s and %s not exist.\nCan't find in_port", src_dpid, dst_dpid)
+                return False
             match = parser.OFPMatch(in_port = in_port, eth_dst = dst_mac)
         else:
             match = parser.OFPMatch(eth_dst = dst_mac)
 
         actions = [parser.OFPActionOutput(out_port)]
         self.add_flow(datapath, 1, match, actions)
-
+        return True
 
     def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src_mac, dst_mac):
         # Caculate the path then send flows.
         path_condition = (src_mac, dst_mac)
         if path_condition in self.path_sets or path_condition[::-1] in self.path_sets:
+            LOG.info('Path exist!!!!!!!')
             return None
 
         Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
         # Can't find any path.
         if Dijkstra_path == None :
+            LOG.info('Can\'t find path!!!!!!!!!')
             return None
 
         self.path_sets[path_condition] = list(Dijkstra_path)
         # reverse tuple
         self.path_sets[path_condition[::-1]] = self.path_sets[path_condition]
-
+        LOG.info.('Path: %s', ','.join(map(str,Dijkstra_path)))
         if len(Dijkstra_path) > 1:
             prev_dpid = src_dpid
             for index, curr_dpid in enumerate(Dijkstra_path[1:-1]) :

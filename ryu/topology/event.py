@@ -124,6 +124,20 @@ class EventLinkDelete(EventLinkBase):
         super(EventLinkDelete, self).__init__(link)
 
 
+class EventLinkAddRequest(event.EventRequestBase):
+    # Directly add link to best performence
+    def __init__(self, link=None):
+        super(EventLinkAddRequest, self).__init__()
+        self.dst = 'BestPerformance'
+        self.link = link
+
+class EventLinkAddReply(event.EventReplyBase):
+    # return reply
+    def __init__(self, dst, result=None):
+        super(EventLinkAddReply, self).__init__(dst)
+        self.result = result
+
+
 class EventLinkRequest(event.EventRequestBase):
     # If dpid is None, reply all list
     def __init__(self, dpid=None):
