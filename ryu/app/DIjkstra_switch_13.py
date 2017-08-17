@@ -38,10 +38,10 @@ class BestPerformance(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        self.switchs_datapath = {}
         super(BestPerformance, self).__init__(*args, **kwargs)
         self.arp_table = {}
         self.arp_switch_table = {}
+        self.switchs_datapath = {}
         # Saving switch port relevant to which link.
         self.switch_to_link = {}        # {
                                         #    dpid : {
@@ -123,7 +123,7 @@ class BestPerformance(app_manager.RyuApp):
                     self.path_sets.pop(path_condition)
                     self.path_sets.pop(path_condition[::-1])
 
-            LOG.info('Link Delete : %s to %s', link.src.dpid, link.dst.dpid)
+            self.logger.info('Link Delete : %s to %s', link.src.dpid, link.dst.dpid)
             self.link_dict.pop(link_condition)
 
 
@@ -245,14 +245,14 @@ class BestPerformance(app_manager.RyuApp):
         try:
             out_port = self.link_dict[(src_dpid, dst_dpid)]['port_no']
         except KeyError as e:
-            LOG.info("Link between switch %s and %s not exist.\nCan't find out_port", src_dpid, dst_dpid)
+            self.logger.info("Link between switch %s and %s not exist.\nCan't find out_port", src_dpid, dst_dpid)
             return False
 
         if in_dpid != None:
             try:
                 in_port = self.link_dict[(src_dpid, in_dpid)]['port_no']
             except KeyError as e:
-                LOG.info("Link between switch %s and %s not exist.\nCan't find in_port", src_dpid, dst_dpid)
+                self.logger.info("Link between switch %s and %s not exist.\nCan't find in_port", src_dpid, dst_dpid)
                 return False
             match = parser.OFPMatch(in_port = in_port, eth_dst = dst_mac)
         else:
@@ -266,19 +266,19 @@ class BestPerformance(app_manager.RyuApp):
         # Caculate the path then send flows.
         path_condition = (src_mac, dst_mac)
         if path_condition in self.path_sets or path_condition[::-1] in self.path_sets:
-            LOG.info('Path exist!!!!!!!')
+            self.logger.info('Path exist!!!!!!!')
             return None
 
         Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
         # Can't find any path.
         if Dijkstra_path == None :
-            LOG.info('Can\'t find path!!!!!!!!!')
+            self.logger.info('Can\'t find path!!!!!!!!!')
             return None
 
         self.path_sets[path_condition] = list(Dijkstra_path)
         # reverse tuple
         self.path_sets[path_condition[::-1]] = self.path_sets[path_condition]
-        LOG.info.('Path: %s', ','.join(map(str,Dijkstra_path)))
+        self.logger.info('Path: %s', ','.join(map(str,Dijkstra_path)))
         if len(Dijkstra_path) > 1:
             prev_dpid = src_dpid
             for index, curr_dpid in enumerate(Dijkstra_path[1:-1]) :
