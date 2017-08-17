@@ -29,7 +29,7 @@ class Graph:
             self.edges.setdefault(  to_node, [])
             if from_node not in self.edges[to_node]:
                 self.edges[to_node].append(from_node)
-        self.set_distance(from_node, to_node, distance)
+        self.set_distance(from_node, to_node, distance, undirected)
 
     def del_node(self, value):
         if value in self.nodes:

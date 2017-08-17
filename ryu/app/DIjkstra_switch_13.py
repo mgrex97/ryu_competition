@@ -87,11 +87,11 @@ class BestPerformance(app_manager.RyuApp):
         }
 
         if link_condition[::-1] in self.link_dict:
-            self.link_to_dict[link_condition]['path_list'] = self.link_to_dict[link_condition[::-1]]['path_list']
+            self.link_dict[link_condition]['path_list'] = self.link_dict[link_condition[::-1]]['path_list']
             # Set Dijkstra edges
-            self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
+            self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1, True)
         else:
-            self.link_to_dict[link_condition]['path_list'] = []
+            self.link_dict[link_condition]['path_list'] = []
 
         self.switch_to_link[link.src.dpid][link.src.port_no] = link
 
@@ -240,10 +240,9 @@ class BestPerformance(app_manager.RyuApp):
                                     match=match, instructions=inst, table_id=table_id)
         datapath.send_msg(mod)
 
-    def add_flow_between_switch(self, src_dpid, dst_dpid, dst_mac, in_dpid = None):
+    def add_flow_between_switch(self, src_dpid, dst_dpid, dst_mac, in_dpid = None, in_port = None):
         datapath = self.switchs_datapath[src_dpid]
         parser = datapath.ofproto_parser
-        in_port = None
 
         try:
             out_port = self.link_dict[(src_dpid, dst_dpid)]['port_no']
@@ -257,6 +256,8 @@ class BestPerformance(app_manager.RyuApp):
             except KeyError as e:
                 self.logger.info("Link between switch %s and %s not exist.\nCan't find in_port", src_dpid, dst_dpid)
                 return False
+
+        if in_port != None:
             match = parser.OFPMatch(in_port = in_port, eth_dst = dst_mac)
         else:
             match = parser.OFPMatch(eth_dst = dst_mac)
@@ -265,7 +266,7 @@ class BestPerformance(app_manager.RyuApp):
         self.add_flow(datapath, 1, match, actions)
         return True
 
-    def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src_mac, dst_mac):
+    def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src_mac, dst_mac, in_port):
         # Caculate the path then send flows.
         path_condition = (src_mac, dst_mac)
         if path_condition in self.path_sets or path_condition[::-1] in self.path_sets:
@@ -295,9 +296,9 @@ class BestPerformance(app_manager.RyuApp):
 
                 prev_dpid = curr_dpid
 
-            self.add_flow_between_switch(Dijkstra_path[0], Dijkstra_path[1], dst_mac, in_dpid = None)
-            self.add_flow_between_switch(Dijkstra_path[-1], Dijkstra_path[-2], src_mac, in_dpid = None)
-
+            self.link_dict[(Dijkstra_path[0], Dijkstra_path[1])]['path_list'].append(path_condition)
+            self.add_flow_between_switch(Dijkstra_path[0], Dijkstra_path[1], dst_mac, in_port = in_port)
+            self.add_flow_between_switch(Dijkstra_path[-1], Dijkstra_path[-2], src_mac, in_port = self.hosts_list[dst_mac]['port_no'])
         return Dijkstra_path
 
 
@@ -331,7 +332,7 @@ class BestPerformance(app_manager.RyuApp):
                 if src_dpid == dst_dpid:
                     out_port = self.hosts_list[dst_mac]['port_no']
                 else:
-                    self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src_mac, dst_mac)
+                    self.add_Dijkstra_path_flow(src_dpid, dst_dpid, src_mac, dst_mac, in_port)
                     return None
             else:
                 # dst not in host_list means host not exist.

@@ -69,8 +69,8 @@ def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconne
                 )
             pre_time = current_time
 
-    h1.cmd('kill %nohup')
-    h2.cmd('kill %nohup')
+        h1.cmd('kill %nohup')
+        h2.cmd('kill %nohup')
 
     # Drop the user in to a CLI so user can run commands.
     CLI( net )
@@ -86,7 +86,7 @@ def parse_input():
         help='specific controller ip. (default: 127.0.0.1)')
     parser.add_argument('-s', dest="switch_size", default=25,
         help='specific switch size. (default: 25)')
-    parser.add_argument('-d', dest="disconnect_file_name", default="input.json",
+    parser.add_argument('-d', dest="disconnect_file_name", default=None,
          help='specific file name of disconnect links(json format).')
 
     args = parser.parse_args()
@@ -96,17 +96,19 @@ def parse_input():
     disconnect_file_name = args.disconnect_file_name
     disconnect_links = None
 
-    try:
-        disconnect_file = open(disconnect_file_name).read()
-        disconnect_links = dict(json.loads(disconnect_file))
-        disconnect_links = collections.OrderedDict(sorted(disconnect_links.items(), key=lambda k : int(k[0])))
-    except TypeError:
-        print('file open error!')
-    except ValueError:
-        print('Json format error!')
-    except IOError:
-        print('file not found!')
-    print(disconnect_links)
+    if disconnect_file_name != None:
+        try:
+            disconnect_file = open(disconnect_file_name).read()
+            disconnect_links = dict(json.loads(disconnect_file))
+            disconnect_links = collections.OrderedDict(sorted(disconnect_links.items(), key=lambda k : int(k[0])))
+        except TypeError:
+            print('file open error!')
+        except ValueError:
+            print('Json format error!')
+        except IOError:
+            print('file not found!')
+
+        print(disconnect_links)
 
     return topology_type, switch_size, controller_ip, disconnect_links
 
