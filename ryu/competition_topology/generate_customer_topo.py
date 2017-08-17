@@ -8,8 +8,7 @@ from mininet.topo import Topo
 from mininet.node import RemoteController, OVSSwitch
 from mininet.clean import Cleanup
 
-from customer_topology import Ring
-from customer_topology import Mesh
+from customer_topology import Ring, Full_Mesh, Mesh
 
 from time import sleep
 import argparse
@@ -32,7 +31,7 @@ def _curl_links(controller_ip='127.0.0.1'):
         Cleanup.cleanup()
         exit()
 
-def runMinimalTopo(topo, switch_size = 25, link_size = None, controller_ip = '127.0.0.1', disconnect_links = {}):
+def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconnect_links = {}):
     # Create a network based on the topology using OVS and controlled by
     # a remote controller.
     net = Mininet(
@@ -45,13 +44,13 @@ def runMinimalTopo(topo, switch_size = 25, link_size = None, controller_ip = '12
     net.start()
 
     Links_Count = len(_curl_links(controller_ip))
-    while Links_Count != link_size and link_size != None:
+    while Links_Count != topo.link_size and topo.link_size != None:
         sleep(2)
         Links_Count = len(_curl_links(controller_ip))
     print('start testing failover')
 
+    h1, h2 = net.get( 'h1', 'h2' )
     if disconnect_links != None and len(disconnect_links) != 0:
-        h1, h2 = net.get( 'h1', 'h2' )
         h1.cmd('arping -c 1 10.0.0.2')
         h2.cmd('nohup ~/ryu/ryu/competition_topology/server.sh > ~/temp.log &')
         h1.cmd('nohup ~/ryu/ryu/competition_topology/send.sh 10.0.0.2 > /dev/null 2>&1 &')
@@ -61,18 +60,17 @@ def runMinimalTopo(topo, switch_size = 25, link_size = None, controller_ip = '12
         for current_time in disconnect_links:
             sleep(int(current_time) - int(pre_time))
 
-            if pre_time != 0:
+            for disconnect_link in disconnect_links[current_time]:
+                print("current time: ", current_time, "disconnect link: ", disconnect_link)
                 net.configLinkStatus(
-                    disconnect_links[pre_time][0],
-                    disconnect_links[pre_time][1],'up')
-
-            if disconnect_links[current_time] in ([], None):
-                h1.cmd('kill %nohup')
-                h2.cmd('kill %nohup')
-                break
-
-            net.configLinkStatus(disconnect_links[current_time][0], disconnect_links[current_time][1], 'down')
+                    disconnect_link[0],
+                    disconnect_link[1],
+                    disconnect_link[2],
+                )
             pre_time = current_time
+
+    h1.cmd('kill %nohup')
+    h2.cmd('kill %nohup')
 
     # Drop the user in to a CLI so user can run commands.
     CLI( net )
@@ -101,13 +99,14 @@ def parse_input():
     try:
         disconnect_file = open(disconnect_file_name).read()
         disconnect_links = dict(json.loads(disconnect_file))
-        disconnect_links = collections.OrderedDict(sorted(disconnect_links.items()))
+        disconnect_links = collections.OrderedDict(sorted(disconnect_links.items(), key=lambda k : int(k[0])))
     except TypeError:
         print('file open error!')
     except ValueError:
         print('Json format error!')
     except IOError:
         print('file not found!')
+    print(disconnect_links)
 
     return topology_type, switch_size, controller_ip, disconnect_links
 
@@ -119,16 +118,16 @@ if __name__ == '__main__':
     # Create an instance of our topology
     if topology_type == 'ring':
         topo = Ring(switch_size=switch_size)
-        link_size = switch_size * 2
+    elif topology_type == 'mix_mesh':
+        topo = Full_Mesh(switch_size=switch_size)
     elif topology_type == 'mesh':
-        topo = Mesh(switch_size=switch_size)
-        link_size = siwtch_size * (switch_size - 1) / 2
+        topo = Mesh()
 
     setLogLevel( 'info' )
 
     # This runs if this file is executed directly
     try:
-        runMinimalTopo(topo, switch_size, link_size, controller_ip, disconnect_links)
+        runMinimalTopo(topo, switch_size, controller_ip, disconnect_links)
     except:
         Cleanup.cleanup()
-        runMinimalTopo(topo, switch_size, link_size, controller_ip, disconnect_links)
+        runMinimalTopo(topo, switch_size, controller_ip, disconnect_links)
