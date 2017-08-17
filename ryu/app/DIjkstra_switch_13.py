@@ -84,13 +84,16 @@ class BestPerformance(app_manager.RyuApp):
 
         self.link_dict[link_condition] = {
             'port_no' : link.src.port_no,
-            'path_list' : []
         }
 
-        self.switch_to_link[link.src.dpid][link.src.port_no] = link
+        if link_condition[::-1] in self.link_dict:
+            self.link_to_dict[link_condition]['path_list'] = self.link_to_dict[link_condition[::-1]]['path_list']
+            # Set Dijkstra edges
+            self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
+        else:
+            self.link_to_dict[link_condition]['path_list'] = []
 
-        # Set Dijkstra edges
-        self.Dijkstra_Graph.add_edge(link.src.dpid, link.dst.dpid, 1)
+        self.switch_to_link[link.src.dpid][link.src.port_no] = link
 
         rep = event.EventLinkAddReply(req.src, True)
         self.reply_to_request(req, rep)
