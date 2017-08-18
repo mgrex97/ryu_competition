@@ -29,7 +29,7 @@ from ryu.lib.packet import ether_types
 from ryu.topology import event
 from ryu.topology.api import get_switch, get_link, get_host
 from collections import defaultdict
-#from pprint import pprint
+from pprint import pprint
 
 ETHERNET_MULTICAST = 'ff:ff:ff:ff:ff:ff'
 
@@ -266,6 +266,9 @@ class BestPerformance(app_manager.RyuApp):
         return True
 
     def add_Dijkstra_path_flow(self, src_dpid, dst_dpid, src_mac, dst_mac, in_port):
+        if dst_mac not in self.hosts_list:
+            return None
+
         # Caculate the path then send flows.
         path_condition = (src_mac, dst_mac)
         if path_condition in self.path_sets or path_condition[::-1] in self.path_sets:
@@ -294,10 +297,23 @@ class BestPerformance(app_manager.RyuApp):
                 self.link_dict[(curr_dpid,next_dpid)]['path_list'].append(path_condition)
 
                 prev_dpid = curr_dpid
-
             self.link_dict[(Dijkstra_path[0], Dijkstra_path[1])]['path_list'].append(path_condition)
             self.add_flow_between_switch(Dijkstra_path[0], Dijkstra_path[1], dst_mac, in_port = in_port)
             self.add_flow_between_switch(Dijkstra_path[-1], Dijkstra_path[-2], src_mac, in_port = self.hosts_list[dst_mac]['port_no'])
+
+            datapath = self.switchs_datapath[dst_dpid]
+            parser = datapath.ofproto_parser
+            out_port = self.hosts_list[dst_mac]['port_no']
+            match = parser.OFPMatch(eth_dst = dst_mac)
+            actions = [parser.OFPActionOutput(out_port)]
+            self.add_flow(datapath, 1, match, actions)
+
+            datapath = self.switchs_datapath[src_dpid]
+            parser = datapath.ofproto_parser
+            match = parser.OFPMatch(eth_dst = src_mac)
+            actions = [parser.OFPActionOutput(in_port)]
+            self.add_flow(datapath, 1, match, actions)
+
         return Dijkstra_path
 
 
@@ -328,6 +344,8 @@ class BestPerformance(app_manager.RyuApp):
             self.arp_table[pkt_arp.src_ip] = src_mac
 
         src_dpid = datapath.id
+        #self.logger.info("packet in [%s] %s %s %s %s", eth.ethertype, src_dpid, src_mac, dst_mac, in_port) 
+
         if dst_mac != ETHERNET_MULTICAST:
             if dst_mac in self.hosts_list:
                 dst_dpid = self.hosts_list[dst_mac]['dpid']
@@ -374,12 +392,12 @@ class BestPerformance(app_manager.RyuApp):
         arp_dst_ip = pkt_arp.dst_ip
         eth_dst = eth.dst
         eth_src = eth.src
-        
+
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data
 
-        if eth_dst == ETHERNET_MULTICAST and arp_dst_ip not in self.arp_table:
+        if arp_dst_ip not in self.arp_table:
             if self.arp_switch_table.setdefault((datapath.id, eth_src, arp_dst_ip), in_port) != in_port:
                 out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                           in_port=in_port, actions=[], data=data)
@@ -393,25 +411,24 @@ class BestPerformance(app_manager.RyuApp):
                                   in_port=in_port, actions=actions, data=data)
                 datapath.send_msg(out)
                 return True
+        elif pkt_arp.opcode == arp.ARP_REQUEST \
+        and self.arp_table[arp_src_ip] in self.hosts_list \
+        and self.hosts_list[self.arp_table[arp_src_ip]]['dpid'] == datapath.id:
+            ARP_Reply = packet.Packet()
+            ARP_Reply.add_protocol(ethernet.ethernet(
+                ethertype=eth.ethertype, dst=eth_src, 
+                src=self.arp_table[arp_dst_ip]))
+            ARP_Reply.add_protocol(arp.arp(
+                opcode=arp.ARP_REPLY, src_mac=self.arp_table[arp_dst_ip], 
+                src_ip=arp_dst_ip, dst_mac=eth_src, dst_ip=arp_src_ip))
+            ARP_Reply.serialize()
 
-        if pkt_arp.opcode == arp.ARP_REQUEST:
-            if arp_dst_ip in self.arp_table:    # arp reply
-                ARP_Reply = packet.Packet()
-                ARP_Reply.add_protocol(ethernet.ethernet(
-                    ethertype=eth.ethertype, dst=eth_src, 
-                    src=self.arp_table[arp_dst_ip]))
-                ARP_Reply.add_protocol(arp.arp(
-                    opcode=arp.ARP_REPLY, src_mac=self.arp_table[arp_dst_ip], 
-                    src_ip=arp_dst_ip, dst_mac=eth_src, dst_ip=arp_src_ip))
-                ARP_Reply.serialize()
-
-                actions = [parser.OFPActionOutput(in_port)]
-                out = parser.OFPPacketOut(
-                        datapath=datapath,
-                        buffer_id=ofproto.OFP_NO_BUFFER,
-                        in_port=ofproto.OFPP_CONTROLLER,
-                        actions=actions, data=ARP_Reply.data)
-                datapath.send_msg(out)
-                return True
-
+            actions = [parser.OFPActionOutput(in_port)]
+            out = parser.OFPPacketOut(
+                    datapath=datapath,
+                    buffer_id=ofproto.OFP_NO_BUFFER,
+                    in_port=ofproto.OFPP_CONTROLLER,
+                    actions=actions, data=ARP_Reply.data)
+            datapath.send_msg(out)
+            return True
         return False
