@@ -29,8 +29,7 @@ from ryu.lib.packet import ether_types
 from ryu.topology import event
 from ryu.topology.api import get_switch, get_link, get_host
 from collections import defaultdict
-from pprint import pprint
-
+#from pprint import pprint
 
 ETHERNET_MULTICAST = 'ff:ff:ff:ff:ff:ff'
 
@@ -324,6 +323,9 @@ class BestPerformance(app_manager.RyuApp):
         if eth.ethertype in (ETH_TYPE_LLDP ,ETH_TYPE_IPV6):
             # ignore lldp and IPV6 packet
             return
+        if eth.ethertype == ETH_TYPE_ARP:
+            pkt_arp = pkt.get_protocols(arp.arp)[0]
+            self.arp_table[pkt_arp.src_ip] = src_mac
 
         src_dpid = datapath.id
         if dst_mac != ETHERNET_MULTICAST:
@@ -337,9 +339,7 @@ class BestPerformance(app_manager.RyuApp):
             else:
                 # dst not in host_list means host not exist.
                 return None
-        elif eth.ethertype == ETH_TYPE_ARP :
-            pkt_arp = pkt.get_protocols(arp.arp)[0]
-            self.arp_table[pkt_arp.src_ip] = src_mac
+        elif eth.ethertype == ETH_TYPE_ARP:
             # arp proxy
             if self.arp_proxy(eth, pkt_arp, datapath, in_port, msg) :
                 return None
@@ -378,10 +378,9 @@ class BestPerformance(app_manager.RyuApp):
         data = None
         if msg.buffer_id == ofproto.OFP_NO_BUFFER:
             data = msg.data
-        
-        if eth_dst == ETHERNET_MULTICAST:
-            if self.arp_switch_table.setdefault(
-            (datapath.id, eth_src, arp_dst_ip), in_port) != in_port:
+
+        if eth_dst == ETHERNET_MULTICAST and arp_dst_ip not in self.arp_table:
+            if self.arp_switch_table.setdefault((datapath.id, eth_src, arp_dst_ip), in_port) != in_port:
                 out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                           in_port=in_port, actions=[], data=data)
                 datapath.send_msg(out)
