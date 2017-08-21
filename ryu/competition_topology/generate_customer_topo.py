@@ -8,9 +8,9 @@ from mininet.topo import Topo
 from mininet.node import RemoteController, OVSSwitch
 from mininet.clean import Cleanup
 
-from customer_topology import Ring, Mesh, Linear
+from customer_topology import Ring, Mesh, Linear, Tree
 # competition topology
-from customer_topology import Competion_5_2, Competion_6_2
+from customer_topology import Competion_3_1, Competion_4_2, Competion_5_2, Competion_6_2
 
 from time import sleep
 import time
@@ -51,8 +51,8 @@ def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconne
         sleep(2)
         links_count = len(_curl_links(controller_ip)['links'])
 
-    h1, h2 = net.get( 'h1', 'h2' )
     if disconnect_links != None and len(disconnect_links) != 0:
+        h1, h2 = net.get( 'h1', 'h2' )
         print('Start testing failover! current time: ' + time.strftime('%H:%M:%S'))
 
         h1.cmd('arping -c 1 10.0.0.2')
@@ -82,6 +82,7 @@ def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconne
         h2.cmd('kill %nohup')
 
     if detect_ports != None and len(detect_ports) != 0:
+        h1, h2 = net.get( 'h1', 'h2' )
         print('Start testing packet detect! current time: ' + time.strftime('%H:%M:%S'))
 
         pre_time = 0
@@ -92,12 +93,13 @@ def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconne
             bandwidth   = int(detect_ports[current_time][1])
             upbound     = bandwidth + int(bandwidth * 0.1)
             downbound   = bandwidth - int(bandwidth * 0.1)
-            dpid        = format(int(detect_ports[current_time][2]), "x")
-            port        = detect_ports[current_time][3]
+            dpid        = str(detect_ports[current_time][2])
+            port        = str(detect_ports[current_time][3])
+            start_time  = time.time()
 
             print('time: ' + current_time + ' ~ ' + str(int(current_time) + int(send_time)))
             print(
-                'current time: ' + time.strftime("%H:%M:%S") + 
+                'current time: ' + time.strftime("%H:%M:%S" , time.localtime(start_time)) + 
                 ', send time: ' + send_time +
                 ', bandwidth: ' +  str(bandwidth) +
                 '(' + str(downbound) +
@@ -105,15 +107,21 @@ def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconne
                 '), dpid: ' + dpid +
                 ', port: ' + port
             )
+
             if bandwidth != 0:
                 h2.cmd('iperf -s -u -D')
                 h1.cmd('nohup iperf -c 10.0.0.2 -t ' + send_time + \
                     ' -i 1 -u -b ' + str(bandwidth) + 'K > /dev/null 2>&1 &')
 
-            for step in range(int(int(send_time) / 1)):
-                port_stats = _curl_links(method='linkbandwidth?dpid=' + dpid + '&port=' + port)
-                base_bandwidth = max(port_stats['rx'], port_stats['tx'])
-                key = u'\u2714' if base_bandwidth >= downbound and base_bandwidth <= upbound else u'\u2718'
+            for step in range(int(send_time)):
+                if (int(time.time()) - int(start_time)) >= int(send_time):
+                    break
+                port_stats = _curl_links(
+                                    controller_ip=controller_ip,
+                                    method='linkbandwidth?dpid=' + dpid + '&port=' + port
+                            )
+                base_bandwidth = max(int(port_stats['rx']), int(port_stats['tx']))
+                key = u'\u2714' if (base_bandwidth >= downbound) and (base_bandwidth <= upbound) else u'\u2718'
 
                 print(
                     'current time: ' + time.strftime("%H:%M:%S") +
@@ -123,7 +131,7 @@ def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconne
                     ', rx: ' + str(port_stats['rx']) +
                     ' ' + key
                 )
-            #sleep(int(send_time) % 3)
+
             pre_time = int(current_time) + int(send_time)
 
     # Drop the user in to a CLI so user can run commands.
@@ -153,7 +161,7 @@ def parse_input():
     parser.add_argument('--controller', dest="controller_ip", default="127.0.0.1",
         help='specific controller ip. (default: 127.0.0.1)')
     parser.add_argument('--size', dest="switch_size", default=25,
-        help='specific switch size. (default: 25)')
+        help='specific switch size. (default: 25). if topo is tree representative tree level.')
     parser.add_argument('--disconnect', dest="disconnect_file_name", default=None,
          help='specific file name of disconnect links(json format).')
     parser.add_argument('--detect', dest="detect_file_name", default=None,
@@ -190,6 +198,12 @@ if __name__ == '__main__':
         topo = Mesh(switch_size=switch_size)
     elif topology_type == 'linear':
         topo = Linear(switch_size=switch_size)
+    elif topology_type == 'tree':
+        topo = Tree(level=switch_size)
+    elif topology_type == 'competion_3_1':
+        topo = Competion_3_1()
+    elif topology_type == 'competion_4_2':
+        topo = Competion_4_2()
     elif topology_type == 'competion_5_2':
         topo = Competion_5_2()
     elif topology_type == 'competion_6_2':

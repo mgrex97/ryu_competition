@@ -59,8 +59,6 @@ class Mesh( Topo ):
 	    self.addLink( 'h1', 's1' )
 	    self.addLink( 'h2', 's' + str(int(self.switch_size / 2)) )
  
-
-
 class Linear( Topo ):
     def __init__(self, *args, **kwargs):
         self.switch_size = kwargs.pop('switch_size')
@@ -79,6 +77,92 @@ class Linear( Topo ):
 
         self.addLink( 'h1', 's4097' )
         self.addLink( 'h2', 's' + str(base_switch_dpid + self.switch_size - 1) )
+
+class Tree( Topo ):
+    def __init__(self, *args, **kwargs):
+        self.level = kwargs.pop('level')
+        self.link_size = 2 ** (self.level + 1) - 4
+        super(Tree, self).__init__(*args, **kwargs)
+
+    def build( self ):
+        h1 = self.addHost( 'h1' )
+        h2 = self.addHost( 'h2' )
+
+        for switch_index in range(1, 2 ** self.level):
+            switch = self.addSwitch( 's' + str(switch_index) , protocols='OpenFlow13')
+
+        parent_list = [1]
+        for index in range(1, self.level):
+            child_list = []
+            while len(parent_list) != 0:
+                parent = parent_list.pop()
+                self.addLink('s' + str(parent), 's' + str(parent * 2))
+                self.addLink('s' + str(parent), 's' + str(parent * 2 + 1))
+                child_list.append(parent * 2 + 1)
+                child_list.append(parent * 2)
+            parent_list = child_list[::]
+
+        self.addLink( 'h1', 's1')
+        self.addLink( 'h2', 's' + str(2 ** self.level - 1))
+
+class Competion_3_1( Topo ):
+    def __init__(self, *args, **kwargs):
+        self.level = 7
+        self.link_size = 2 ** (self.level + 1) - 32
+        super(Competion_3_1, self).__init__(*args, **kwargs)
+
+    def build( self ):
+        for switch_index in range(1, 2 ** self.level):
+            switch = self.addSwitch( 's' + str(switch_index) , protocols='OpenFlow13')
+
+        parent_list = [1]
+        for index in range(1, self.level):
+            child_list = []
+            while len(parent_list) != 0:
+                parent = parent_list.pop()
+                if parent != 15:
+                    self.addLink('s' + str(parent), 's' + str(parent * 2))
+                    self.addLink('s' + str(parent), 's' + str(parent * 2 + 1))
+                    child_list.append(parent * 2)
+                    child_list.append(parent * 2 + 1)
+            parent_list = child_list[::]
+
+class Competion_4_2( Topo ):
+    def __init__(self, *args, **kwargs):
+        self.level = 6
+        self.link_size = 98
+        super(Competion_4_2, self).__init__(*args, **kwargs)
+
+    def build( self ):
+        h1 = self.addHost( 'h1' )
+        h2 = self.addHost( 'h2' )
+
+        for switch_index in range(1, 2 ** self.level):
+            switch = self.addSwitch( 's' + str(switch_index) , protocols='OpenFlow13')
+
+        parent_list = [1]
+        for index in range(1, self.level):
+            child_list = []
+            while len(parent_list) != 0:
+                parent = parent_list.pop()
+                if parent != 15 and parent != 12 and 29:
+                    if parent != 14 and parent != 27:
+                        self.addLink('s' + str(parent), 's' + str(parent * 2))
+                        child_list.append(parent * 2)
+
+                    self.addLink('s' + str(parent), 's' + str(parent * 2 + 1))
+                    child_list.append(parent * 2 + 1)
+            parent_list = child_list[::]
+
+        switch = self.addSwitch( 's104', protocols='OpenFlow13')
+        switch = self.addSwitch( 's105', protocols='OpenFlow13')
+        switch = self.addSwitch( 's107', protocols='OpenFlow13')
+        self.addLink( 's52', 's104')
+        self.addLink( 's52', 's105')
+        self.addLink( 's53', 's107')
+
+        self.addLink( 'h1', 's33')
+        self.addLink( 'h2', 's55')
 
 class Competion_5_2( Topo ):
     def __init__(self, *args, **kwargs):
