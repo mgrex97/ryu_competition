@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 from mininet.topo import Topo
+base_switch_dpid = 4097
+
 
 class Ring( Topo ):
     def __init__(self, *args, **kwargs):
@@ -36,11 +38,11 @@ class Ring( Topo ):
         self.addLink( 'h1', 's1' )
         self.addLink( 'h2', 's' + str(int(self.switch_size / 2)) )
 
-class Full_Mesh( Topo ):
+class Mesh( Topo ):
     def __init__(self, *args, **kwargs):
         self.switch_size = kwargs.pop('switch_size')
         self.link_size = self.switch_size * (self_size - 1) / 2
-        super(Full_Mesh, self).__init__(*args, **kwargs)
+        super(Mesh, self).__init__(*args, **kwargs)
 
     def build( self ):
         h1 = self.addHost( 'h1' )
@@ -58,10 +60,30 @@ class Full_Mesh( Topo ):
 	    self.addLink( 'h2', 's' + str(int(self.switch_size / 2)) )
  
 
-class Mesh( Topo ):
+
+class Linear( Topo ):
+    def __init__(self, *args, **kwargs):
+        self.switch_size = kwargs.pop('switch_size')
+        self.link_size = (self.switch_size - 1) * 2
+        super(Linear, self).__init__(*args, **kwargs)
+
+    def build( self ):
+        h1 = self.addHost( 'h1' )
+        h2 = self.addHost( 'h2' )
+
+        for switch_index in range(base_switch_dpid, base_switch_dpid + self.switch_size):
+            switch = self.addSwitch( 's' + str(switch_index) , protocols='OpenFlow13')
+
+        for switch_index in range(base_switch_dpid, base_switch_dpid + self.switch_size - 1):
+            self.addLink( 's' + str(switch_index), 's' + str(switch_index + 1) )
+
+        self.addLink( 'h1', 's4097' )
+        self.addLink( 'h2', 's' + str(base_switch_dpid + self.switch_size - 1) )
+
+class Competion_5_1( Topo ):
     def __init__(self, *args, **kwargs):
         self.link_size = 28
-        super(Mesh, self).__init__(*args, **kwargs)
+        super(Competion_5_1, self).__init__(*args, **kwargs)
 
     def build( self ):
         h1 = self.addHost( 'h1' )
@@ -92,4 +114,33 @@ class Mesh( Topo ):
 
         self.addLink( 'h1', 's4')
         self.addLink( 'h2', 's11')
+
+class Competion_6_2( Topo ):
+    def __init__(self, *args, **kwargs):
+        self.link_size = 16
+        super(Competion_6_2, self).__init__(*args, **kwargs)
+
+    def build( self ):
+        h1 = self.addHost( 'h1' )
+        h2 = self.addHost( 'h2' )
+
+        for switch_index in range(base_switch_dpid, base_switch_dpid + 9):
+            switch = self.addSwitch( 's' + str(switch_index) , protocols='OpenFlow13')
+
+        links = [
+            (0,1),
+            (0,4),
+            (1,2),
+            (1,5),
+            (5,6),
+            (5,7),
+            (7,8),
+            (8,3)
+        ]
+
+        for link in links:
+            self.addLink( 's' + str(base_switch_dpid + link[0]), 's' + str(base_switch_dpid + link[1]) )
+
+        self.addLink( 'h1', 's' + str(base_switch_dpid) )
+        self.addLink( 'h2', 's' + str(base_switch_dpid + 3) )
 

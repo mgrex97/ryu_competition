@@ -228,7 +228,7 @@ def sdn_method(method):
             ret = method(self, req, dp, ofctl, port, **kwargs)
             switch_dict_t0 = ret[list(ret)[0]][0]
 
-            delay_time = 3
+            delay_time = 1
             time.sleep(delay_time)
 
             ret = method(self, req, dp, ofctl, port, **kwargs)
@@ -368,6 +368,7 @@ class StatsController(ControllerBase):
         return Response(content_type='application/json', body=body)
 
     def get_topology(self, req, **kwargs):
+        time.sleep(1)
         links_list = get_link(self.topology_api_app, None)
         body = json.dumps({"links" : [self.to_dict(link) for link in links_list]})
         return Response(content_type='application/json', body=body)
