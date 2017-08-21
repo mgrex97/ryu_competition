@@ -10,7 +10,7 @@ from mininet.clean import Cleanup
 
 from customer_topology import Ring, Mesh, Linear
 # competition topology
-from customer_topology import Competion_5_1, Competion_6_2
+from customer_topology import Competion_5_2, Competion_6_2
 
 from time import sleep
 import time
@@ -106,9 +106,9 @@ def runMinimalTopo(topo, switch_size = 25, controller_ip = '127.0.0.1', disconne
                 ', port: ' + port
             )
             if bandwidth != 0:
-                h2.cmd('nohup iperf -s -u -D &')
+                h2.cmd('iperf -s -u -D')
                 h1.cmd('nohup iperf -c 10.0.0.2 -t ' + send_time + \
-                    ' -i 2 -u -b ' + str(bandwidth) + 'K > ~/packet_detect_' + current_time + ' &')
+                    ' -i 1 -u -b ' + str(bandwidth) + 'K > /dev/null 2>&1 &')
 
             for step in range(int(int(send_time) / 1)):
                 port_stats = _curl_links(method='linkbandwidth?dpid=' + dpid + '&port=' + port)
@@ -190,8 +190,8 @@ if __name__ == '__main__':
         topo = Mesh(switch_size=switch_size)
     elif topology_type == 'linear':
         topo = Linear(switch_size=switch_size)
-    elif topology_type == 'competion_5_1':
-        topo = Competion_5_1()
+    elif topology_type == 'competion_5_2':
+        topo = Competion_5_2()
     elif topology_type == 'competion_6_2':
         topo = Competion_6_2()
 

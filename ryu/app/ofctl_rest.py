@@ -236,8 +236,8 @@ def sdn_method(method):
 
             bandwidth_dict = dict()
             #switch_dict['rx_bytes'] convert to kbit (byte * 8 / 1024)
-            bandwidth_dict["rx"] = int((switch_dict_t1['rx_bytes'] - switch_dict_t0['rx_bytes']) / (delay_time * 128))
-            bandwidth_dict["tx"] = int((switch_dict_t1['tx_bytes'] - switch_dict_t0['tx_bytes']) / (delay_time * 128))
+            bandwidth_dict["rx"] = str(int((switch_dict_t1['rx_bytes'] - switch_dict_t0['rx_bytes']) / (delay_time * 128)))
+            bandwidth_dict["tx"] = str(int((switch_dict_t1['tx_bytes'] - switch_dict_t0['tx_bytes']) / (delay_time * 128)))
 
             return Response(content_type='application/json',
                             body=json.dumps(bandwidth_dict))
@@ -359,8 +359,8 @@ class StatsController(ControllerBase):
         self.topology_api_app = data['topology_api_app']
     
     def to_dict(self, link):
-        return {'src' : {'dpid' : format(link.src.dpid, "x"),'port':link.src.port_no},
-                'dst' : {'dpid' : format(link.dst.dpid, "x"),'port':link.dst.port_no}}
+        return {'src' : {'dpid' : str(format(link.src.dpid, "x")),'port':str(link.src.port_no)},
+                'dst' : {'dpid' : str(format(link.dst.dpid, "x")),'port':str(link.dst.port_no)}}
 
     def get_dpids(self, req, **_kwargs):
         dps = list(self.dpset.dps.keys())

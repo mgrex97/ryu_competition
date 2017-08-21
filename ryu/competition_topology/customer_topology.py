@@ -80,10 +80,10 @@ class Linear( Topo ):
         self.addLink( 'h1', 's4097' )
         self.addLink( 'h2', 's' + str(base_switch_dpid + self.switch_size - 1) )
 
-class Competion_5_1( Topo ):
+class Competion_5_2( Topo ):
     def __init__(self, *args, **kwargs):
         self.link_size = 28
-        super(Competion_5_1, self).__init__(*args, **kwargs)
+        super(Competion_5_2, self).__init__(*args, **kwargs)
 
     def build( self ):
         h1 = self.addHost( 'h1' )
