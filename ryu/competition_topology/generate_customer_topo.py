@@ -10,7 +10,7 @@ from mininet.clean import Cleanup
 
 from customer_topology import Ring, Mesh, Linear, Tree
 # competition topology
-from customer_topology import Competion_3_1, Competion_4_2, Competion_5_2, Competion_6_2
+from customer_topology import Competition_3_1, Competition_4_2, Competition_4_3, Competition_5_2, Competition_6_2
 
 from time import sleep
 import time
@@ -200,14 +200,16 @@ if __name__ == '__main__':
         topo = Linear(switch_size=switch_size)
     elif topology_type == 'tree':
         topo = Tree(level=switch_size)
-    elif topology_type == 'competion_3_1':
-        topo = Competion_3_1()
-    elif topology_type == 'competion_4_2':
-        topo = Competion_4_2()
-    elif topology_type == 'competion_5_2':
-        topo = Competion_5_2()
-    elif topology_type == 'competion_6_2':
-        topo = Competion_6_2()
+    elif topology_type == 'competition_3_1':
+        topo = Competition_3_1()
+    elif topology_type == 'competition_4_2':
+        topo = Competition_4_2()
+    elif topology_type == 'competition_4_3':
+        topo = Competition_4_3()
+    elif topology_type == 'competition_5_2':
+        topo = Competition_5_2()
+    elif topology_type == 'competition_6_2':
+        topo = Competition_6_2()
 
     setLogLevel( 'info' )
 

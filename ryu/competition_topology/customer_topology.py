@@ -105,11 +105,11 @@ class Tree( Topo ):
         self.addLink( 'h1', 's1')
         self.addLink( 'h2', 's' + str(2 ** self.level - 1))
 
-class Competion_3_1( Topo ):
+class Competition_3_1( Topo ):
     def __init__(self, *args, **kwargs):
         self.level = 7
         self.link_size = 2 ** (self.level + 1) - 32
-        super(Competion_3_1, self).__init__(*args, **kwargs)
+        super(Competition_3_1, self).__init__(*args, **kwargs)
 
     def build( self ):
         for switch_index in range(1, 2 ** self.level):
@@ -127,11 +127,11 @@ class Competion_3_1( Topo ):
                     child_list.append(parent * 2 + 1)
             parent_list = child_list[::]
 
-class Competion_4_2( Topo ):
+class Competition_4_2( Topo ):
     def __init__(self, *args, **kwargs):
         self.level = 6
         self.link_size = 98
-        super(Competion_4_2, self).__init__(*args, **kwargs)
+        super(Competition_4_2, self).__init__(*args, **kwargs)
 
     def build( self ):
         h1 = self.addHost( 'h1' )
@@ -164,10 +164,56 @@ class Competion_4_2( Topo ):
         self.addLink( 'h1', 's33')
         self.addLink( 'h2', 's55')
 
-class Competion_5_2( Topo ):
+class Competition_4_3( Topo ):
+    def __init__(self, *args, **kwargs):
+        self.link_size = 910
+        super(Competition_4_3, self).__init__(*args, **kwargs)
+
+    def build( self ):
+        self.addHost( 'h1' )
+        self.addHost( 'h2' )
+
+        for switch_index in range(1,43):
+            self.addSwitch( 's' + str(switch_index) , protocols='OpenFlow13' )
+
+        for switch_index in range(13, 43):
+            for siblings_switch_index in range(13, 43):
+                if switch_index < siblings_switch_index:
+                    self.addLink( 's' + str(switch_index), 's' + str(siblings_switch_index) )
+
+        links = [
+            (1,2),
+            (1,5),
+            (1,9),
+            (2,3),
+            (2,9),
+            (2,13),
+            (3,4),
+            (3,5),
+            (4,13),
+            (5,6),
+            (5,9),
+            (5,12),
+            (6,7),
+            (7,13),
+            (8,9),
+            (9,10),
+            (10,11),
+            (10,12),
+            (11,12),
+            (12,13)
+        ]
+
+        for link in links:
+            self.addLink( 's' + str(link[0]), 's' + str(link[1]) )
+
+        self.addLink( 'h1', 's8' )
+        self.addLink( 'h2', 's40' )
+
+class Competition_5_2( Topo ):
     def __init__(self, *args, **kwargs):
         self.link_size = 28
-        super(Competion_5_2, self).__init__(*args, **kwargs)
+        super(Competition_5_2, self).__init__(*args, **kwargs)
 
     def build( self ):
         h1 = self.addHost( 'h1' )
@@ -199,10 +245,10 @@ class Competion_5_2( Topo ):
         self.addLink( 'h1', 's4')
         self.addLink( 'h2', 's11')
 
-class Competion_6_2( Topo ):
+class Competition_6_2( Topo ):
     def __init__(self, *args, **kwargs):
         self.link_size = 16
-        super(Competion_6_2, self).__init__(*args, **kwargs)
+        super(Competition_6_2, self).__init__(*args, **kwargs)
 
     def build( self ):
         h1 = self.addHost( 'h1' )
