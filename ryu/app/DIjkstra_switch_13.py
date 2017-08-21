@@ -29,7 +29,7 @@ from ryu.lib.packet import ether_types
 from ryu.topology import event
 from ryu.topology.api import get_switch, get_link, get_host
 from collections import defaultdict
-from pprint import pprint
+#from pprint import pprint
 
 ETHERNET_MULTICAST = 'ff:ff:ff:ff:ff:ff'
 
@@ -125,7 +125,7 @@ class BestPerformance(app_manager.RyuApp):
                     self.path_sets.pop(path_condition)
                     self.path_sets.pop(path_condition[::-1])
 
-            self.logger.info('Link Delete : %s to %s', link.src.dpid, link.dst.dpid)
+            #self.logger.info('Link Delete : %s to %s', link.src.dpid, link.dst.dpid)
             self.link_dict.pop(link_condition)
 
 
@@ -152,7 +152,7 @@ class BestPerformance(app_manager.RyuApp):
         ofproto = msg.datapath.ofproto
 
         if ofproto.OFPP_CONTROLLER == port_no:
-            self.logger.info("port controller %s", port_no)
+            #self.logger.info("port controller %s", port_no)
             return
 
         if reason == ofproto.OFPPR_ADD:
@@ -272,19 +272,19 @@ class BestPerformance(app_manager.RyuApp):
         # Caculate the path then send flows.
         path_condition = (src_mac, dst_mac)
         if path_condition in self.path_sets or path_condition[::-1] in self.path_sets:
-            self.logger.info('Path exist!!!!!!!')
+            self.logger.info('Path exist!')
             return None
 
         Dijkstra_path = Dijkstra.dijsktra(self.Dijkstra_Graph, src_dpid, dst_dpid)
         # Can't find any path.
         if Dijkstra_path == None :
-            self.logger.info('Can\'t find path!!!!!!!!!')
+            self.logger.info('Can\'t find path!')
             return None
 
         self.path_sets[path_condition] = list(Dijkstra_path)
         # reverse tuple
         self.path_sets[path_condition[::-1]] = self.path_sets[path_condition]
-        self.logger.info('Path: %s', ','.join(map(str,Dijkstra_path)))
+        #self.logger.info('Path: %s', ','.join(map(str,Dijkstra_path)))
         if len(Dijkstra_path) > 1:
             prev_dpid = src_dpid
             for index, curr_dpid in enumerate(Dijkstra_path[1:-1]) :
@@ -301,19 +301,20 @@ class BestPerformance(app_manager.RyuApp):
             self.add_flow_between_switch(Dijkstra_path[0], Dijkstra_path[1], dst_mac, in_port = in_port)
             self.add_flow_between_switch(Dijkstra_path[-1], Dijkstra_path[-2], src_mac, in_port = self.hosts_list[dst_mac]['port_no'])
 
+            datapath = self.switchs_datapath[src_dpid]
+            parser = datapath.ofproto_parser
+            actions = [parser.OFPActionOutput(in_port)]
+            in_port = self.link_dict[(Dijkstra_path[0], Dijkstra_path[1])]['port_no']
+            match = parser.OFPMatch(in_port = in_port,eth_dst = src_mac)
+            self.add_flow(datapath, 1, match, actions)
+
             datapath = self.switchs_datapath[dst_dpid]
             parser = datapath.ofproto_parser
             out_port = self.hosts_list[dst_mac]['port_no']
-            match = parser.OFPMatch(eth_dst = dst_mac)
             actions = [parser.OFPActionOutput(out_port)]
+            in_port = self.link_dict[(Dijkstra_path[-1], Dijkstra_path[-2])]['port_no']
+            match = parser.OFPMatch(in_port = in_port, eth_dst = dst_mac)
             self.add_flow(datapath, 1, match, actions)
-
-            datapath = self.switchs_datapath[src_dpid]
-            parser = datapath.ofproto_parser
-            match = parser.OFPMatch(eth_dst = src_mac)
-            actions = [parser.OFPActionOutput(in_port)]
-            self.add_flow(datapath, 1, match, actions)
-
         return Dijkstra_path
 
 
@@ -370,6 +371,7 @@ class BestPerformance(app_manager.RyuApp):
         # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
             match = parser.OFPMatch(in_port=in_port, eth_dst=dst_mac)
+            #match = parser.OFPMatch(eth_dst=dst_mac)
             # verify if we have a valid buffer_id, if yes avoid to send both
             # flow_mod & packet_out
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:
