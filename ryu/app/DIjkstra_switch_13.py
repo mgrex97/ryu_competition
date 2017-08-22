@@ -108,22 +108,21 @@ class BestPerformance(app_manager.RyuApp):
                 # get host mac
                 src_mac = path_condition[0]
                 dst_mac = path_condition[1]
-                if src_mac not in self.hosts_list \
-                or dst_mac not in self.hosts_list:
-                    continue
-                src_dpid = self.hosts_list[src_mac]['dpid']
-                dst_dpid = self.hosts_list[dst_mac]['dpid']
-                if path_condition in self.path_sets:
-                    # reached_break_point = True
-                    # Delete the flow which is relevant to the path.
-                    for dpid in self.path_sets[path_condition]:
-                        # if dp_id is not break_point and reached_break_point:
-                        # if dpid in self.switchs_datapath and state == True:
-                        self.delete_flow(self.switchs_datapath[dpid], dst_mac)
-                        self.delete_flow(self.switchs_datapath[dpid], src_mac)
-                        # reached_break_point = False
-                    self.path_sets.pop(path_condition)
-                    self.path_sets.pop(path_condition[::-1])
+                if src_mac  in self.hosts_list \
+                and dst_mac in self.hosts_list:
+                    src_dpid = self.hosts_list[src_mac]['dpid']
+                    dst_dpid = self.hosts_list[dst_mac]['dpid']
+                    if path_condition in self.path_sets:
+                        # reached_break_point = True
+                        # Delete the flow which is relevant to the path.
+                        for dpid in self.path_sets[path_condition]:
+                            # if dp_id is not break_point and reached_break_point:
+                            # if dpid in self.switchs_datapath and state == True:
+                            self.delete_flow(self.switchs_datapath[dpid], dst_mac)
+                            self.delete_flow(self.switchs_datapath[dpid], src_mac)
+                            # reached_break_point = False
+                self.path_sets.pop(path_condition,None)
+                self.path_sets.pop(path_condition[::-1],None)
 
             #self.logger.info('Link Delete : %s to %s', link.src.dpid, link.dst.dpid)
             self.link_dict.pop(link_condition)
