@@ -108,7 +108,7 @@ class Tree( Topo ):
 class Competition_3_1( Topo ):
     def __init__(self, *args, **kwargs):
         self.level = 7
-        self.link_size = 2 ** (self.level + 1) - 32
+        self.link_size = 186
         super(Competition_3_1, self).__init__(*args, **kwargs)
 
     def build( self ):
@@ -120,17 +120,19 @@ class Competition_3_1( Topo ):
             child_list = []
             while len(parent_list) != 0:
                 parent = parent_list.pop()
-                if parent != 15:
-                    self.addLink('s' + str(parent), 's' + str(parent * 2))
+                if parent != 15 and parent != 29 and parent != 55:
+                    if parent != 14 and parent != 27 and parent != 53:
+                        self.addLink('s' + str(parent), 's' + str(parent * 2))
+                        child_list.append(parent * 2)
+
                     self.addLink('s' + str(parent), 's' + str(parent * 2 + 1))
-                    child_list.append(parent * 2)
                     child_list.append(parent * 2 + 1)
             parent_list = child_list[::]
 
 class Competition_4_2( Topo ):
     def __init__(self, *args, **kwargs):
         self.level = 6
-        self.link_size = 98
+        self.link_size = 94
         super(Competition_4_2, self).__init__(*args, **kwargs)
 
     def build( self ):
@@ -145,7 +147,7 @@ class Competition_4_2( Topo ):
             child_list = []
             while len(parent_list) != 0:
                 parent = parent_list.pop()
-                if parent != 15 and parent != 12 and 29:
+                if parent != 15 and parent != 12 and parent != 29:
                     if parent != 14 and parent != 27:
                         self.addLink('s' + str(parent), 's' + str(parent * 2))
                         child_list.append(parent * 2)

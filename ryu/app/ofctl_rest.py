@@ -43,6 +43,8 @@ from ryu.app.wsgi import WSGIApplication
 from ryu.lib import dpid as dpid_lib
 from ryu.topology.api import get_switch, get_link, get_host
 
+from pprint import pprint
+
 LOG = logging.getLogger('ryu.app.ofctl_rest')
 
 # supported ofctl versions in this restful app
@@ -200,47 +202,33 @@ class PortNotFoundError(RyuException):
 
 def sdn_method(method):
     def wrapper(self, req, *args, **kwargs):
-        query_string = req.environ["QUERY_STRING"]
-        param_list = dict(urllib.parse.parse_qsl(query_string))
-        dpid = param_list["dpid"]
-        port = param_list["port"]
+        param_list = []
+        if "QUERY_STRING" in req.environ:
+            query_string = req.environ["QUERY_STRING"]
+            param_list = dict(urllib.parse.parse_qsl(query_string))
 
-        # Get datapath instance from DPSet
-        try:
-            dp = self.dpset.get(int(str(dpid), 16))
-        except ValueError:
-            LOG.exception('Invalid dpid: %s', dpid)
-            return Response(status=400)
-        if dp is None:
-            LOG.error('No such Datapath: %s', dpid)
-            return Response(status=404)
+        dpid_list = list(self.dpset.dps.keys()) if "dpid" not in param_list \
+            else [int(str(param_list["dpid"]),16)]
+        port = None if "port" not in param_list else param_list["port"]
+        bandwidth_list = list()
 
-        # Get lib/ofctl_* module
-        try:
-            ofctl = supported_ofctl.get(dp.ofproto.OFP_VERSION)
-        except KeyError:
-            LOG.exception('Unsupported OF version: %s',
-                          dp.ofproto.OFP_VERSION)
-            return Response(status=501)
-
+        t1 = dict()
+        t2 = dict()
         # Invoke StatsController method
         try:
-            ret = method(self, req, dp, ofctl, port, **kwargs)
-            switch_dict_t0 = ret[list(ret)[0]][0]
+            #t1 = method(self, req, dp, ofctl, port, **kwargs)
+            for dpid in dpid_list:
+                temp = get_dpid_port_status(self, req, port, method, dpid, **kwargs)
+                t1[dpid] = temp.get(str(dpid), None)
+            time.sleep(1)
+            #t2 = method(self, req, dp, ofctl, port, **kwargs)
+            for dpid in dpid_list:
+                temp = get_dpid_port_status(self, req, port, method, dpid, **kwargs)
+                t2[dpid] = temp.get(str(dpid), None)
 
-            delay_time = 1
-            time.sleep(delay_time)
-
-            ret = method(self, req, dp, ofctl, port, **kwargs)
-            switch_dict_t1 = ret[list(ret)[0]][0]
-
-            bandwidth_dict = dict()
-            #switch_dict['rx_bytes'] convert to kbit (byte * 8 / 1024)
-            bandwidth_dict["rx"] = str(int((switch_dict_t1['rx_bytes'] - switch_dict_t0['rx_bytes']) / (delay_time * 128)))
-            bandwidth_dict["tx"] = str(int((switch_dict_t1['tx_bytes'] - switch_dict_t0['tx_bytes']) / (delay_time * 128)))
-
+            bandwidth_list = calculate_bandwidth(t1, t2)
             return Response(content_type='application/json',
-                            body=json.dumps(bandwidth_dict))
+                            body=json.dumps(bandwidth_list))
         except ValueError:
             LOG.exception('Invalid syntax: %s', req.body)
             return Response(status=400)
@@ -250,6 +238,48 @@ def sdn_method(method):
             return Response(status=501)
 
     return wrapper
+
+def get_dpid_port_status(self, req, port, method, dpid, **kwargs):
+    # Get datapath instance from DPSet
+    try:
+        dp = self.dpset.get(dpid)
+    except ValueError:
+        LOG.exception('Invalid dpid: %s', dpid)
+        return
+    if dp is None:
+        LOG.error('No such Datapath: %s', dpid)
+        return
+
+    # Get lib/ofctl_* module
+    try:
+        ofctl = supported_ofctl.get(dp.ofproto.OFP_VERSION)
+    except KeyError:
+        LOG.exception('Unsupported OF version: %s',
+                      dp.ofproto.OFP_VERSION)
+        return
+    return method(self, req, dp, ofctl, port, **kwargs)
+
+def calculate_bandwidth(bandwidth_t1, bandwidth_t2):
+    bandwidth_list = list()
+    for dpid in bandwidth_t1:
+        dpid_dict = {
+            'dpid'       : dpid,
+            'portstatus' : list()
+        }
+        for port_status_t1 in bandwidth_t1[dpid]:
+            if port_status_t1['port_no'] != "LOCAL":
+                for port_status_t2 in bandwidth_t2[dpid]:
+                    if port_status_t2['port_no'] != "LOCAL" and port_status_t1['port_no'] == port_status_t2['port_no']:
+                        dpid_dict["portstatus"].append(
+                            {
+                                'port'  : port_status_t1['port_no'],
+                                'tx'    : str(int((port_status_t2['tx_bytes'] - port_status_t1['tx_bytes']) / 128)),
+                                'rx'    : str(int((port_status_t2['rx_bytes'] - port_status_t1['rx_bytes']) / 128)),
+                            }
+                        )
+                        break
+        bandwidth_list.append(dpid_dict)
+    return bandwidth_list
 
 def stats_method(method):
     def wrapper(self, req, dpid, *args, **kwargs):
